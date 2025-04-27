@@ -273,7 +273,7 @@ nullprintioctl(struct device *dev, int op, userptr_t data)
 
 	kprintf("     IOCTL operation code: %d\n", op);
 
-	return 0;
+	return EINVAL;
 }
 
 // Based on `null_devops`

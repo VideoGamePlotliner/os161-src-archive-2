@@ -423,6 +423,7 @@ defoption netfs
 #
 # Note that "emufs" is completely contained in the "emu" device.
 #
+defoption emuprint # Enabling this option will make emufs print its actions to the console.
 
 
 ########################################

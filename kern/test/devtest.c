@@ -37,11 +37,13 @@
 #include <kern/fcntl.h>
 #include <vfs.h>
 #include <vnode.h>
+#include <kern/errno.h>
+#include <stat.h>
 
 #define DEVTEST1_IOCTL_OPERATION_CODE 54816
 #define DEVTEST1_INPUT_BUFFER_SIZE 128
 #define DEVTEST1_OUTPUT_BUFFER_SIZE 64
-#define DEVTEST1_DEVICE_PATH "nullprint:"
+#define DEVTEST1_PATH_SIZE 16
 
 
 
@@ -56,28 +58,53 @@ devtest1(int nargs, char **args)
 {
     // Implementation based on `printfile()`
 
-	(void)nargs;
-	(void)args;
-
 	struct vnode *vn;
 	struct iovec iov;
 	struct uio ku;
 	char inbuf[DEVTEST1_INPUT_BUFFER_SIZE];
     char outbuf[DEVTEST1_OUTPUT_BUFFER_SIZE];
-	char path[16];
+	char path[DEVTEST1_PATH_SIZE];
 	int result;
 
-    KASSERT(sizeof(path) > strlen(DEVTEST1_DEVICE_PATH));
+	if (nargs != 2) {
+		kprintf("Usage: dv1 filename\n");
+		return EINVAL;
+	}
+
+	if (args[1] == NULL) {
+		kprintf("Usage: dv1 filename\n");
+		return EFAULT; // Return this for the same reason that NULL values can make `vm_fault()` return this
+	}
+
+    if (sizeof(path) <= strlen(args[1]))
+	{
+		result = ENAMETOOLONG;
+		kprintf("%s: filename is too long: %s\n", __func__, strerror(result));
+		return result;
+	}
 
 	/* vfs_open destroys the string it's passed; make a copy */
-	strcpy(path, DEVTEST1_DEVICE_PATH);
+	strcpy(path, args[1]);
 
     /* null terminate */
     path[sizeof(path) - 1] = 0;
 
+	kprintf("%s: path is %s\n", __func__, path);
+
 	result = vfs_open(path, O_RDWR, 0664, &vn);
 	if (result) {
-		kprintf("devtest1: vfs_open: %s\n", strerror(result));
+		kprintf("%s: vfs_open: %s\n", __func__, strerror(result));
+		return result;
+	}
+
+	kprintf("%s: vnode is %s\n", __func__, VOP_ISSEEKABLE(vn) ? "seekable" : "not seekable");
+
+	struct stat statbuf;
+	bzero(&statbuf, sizeof(struct stat));
+	result = VOP_STAT(vn, &statbuf);
+	if (result) {
+		kprintf("%s: VOP_STAT: %s\n", __func__, strerror(result));
+		vfs_close(vn);
 		return result;
 	}
 
@@ -108,8 +135,8 @@ devtest1(int nargs, char **args)
     result = VOP_IOCTL(vn, DEVTEST1_IOCTL_OPERATION_CODE, (userptr_t)0);
 	if (result) {
 		kprintf("%s: VOP_IOCTL: %s\n", __func__, strerror(result));
-		vfs_close(vn);
-		return result;
+		// vfs_close(vn);
+		// return result;
 	}
 
 	vfs_close(vn);

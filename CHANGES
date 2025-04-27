@@ -15,8 +15,131 @@ various other people, all of whom are (hopefully) listed below.
 OS/161 2.0.3 edits
 ------------------
 
+20250427 VideoGamePlotliner
+   - Remove functions `kprintf_EMUPRINT_struct_fs()` and
+   `kprintf_EMUPRINT_struct_vnode()`.
+   - Add a `const struct vnode *` parameter to `kprintf_EMUPRINT_b()`.
+   - Use `VOP_ISSEEKABLE(vn)` in `devtest1()` to make the OS/161
+   command `dv1 emu0:fstest.tmp` call `emufs_isseekable()`.
+   - Add function `kprintf_EMUPRINT_ioctl()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_ioctl()`. Remove function
+   `kprintf_EMUPRINT_userptr_t()`.
+   - Improve `userland/ci.mk` by removing 3 more `.c` files from
+   `ALL_CHECKS`, removing the line `.PHONY: $(ALL_CHECKS)`, adding the
+   variable `ALL_USEMTEST_FILES`, and adding `$(ALL_USEMTEST_FILES)`
+   to the `rm -vrf` line.
+   - Add `#if OPT_EMUPRINT` blocks to `kern/dev/lamebus/emu.c`.
+   - Rename `kprintf_EMUPRINT_o()` to `kprintf_EMUPRINT_vnode_o()`.
+   Rename `kprintf_EMUPRINT_v()` to `kprintf_EMUPRINT_vnode_d()`.
+   Rename `kprintf_EMUPRINT_ioctl()` to `kprintf_EMUPRINT_vnode_ioctl()`.
+   Rename `kprintf_EMUPRINT_b()` to `kprintf_EMUPRINT_vnode_b()`.
+   - Put `kprintf_EMUPRINT_d()` right above `kprintf_EMUPRINT_vnode_o()`.
+   - Change the return value of `nullprintioctl()` from 0 to `EINVAL`
+   because `nullioctl()` returns `EINVAL`.
+   - Add function `kprintf_EMUPRINT_vnode_stat()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_stat()`. Remove `kprintf_EMUPRINT_struct_stat()`.
+   Use `VOP_STAT(vn, &statbuf)` in `devtest1()` to make the OS/161 command
+   `dv1 emu0:fstest.tmp` call `emufs_stat()`. Comment out two lines near the
+   end of `devtest1()` that are related to ioctl.
+   - Add function `kprintf_EMUPRINT_vnode_gettype()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_file_gettype()` and `emufs_dir_gettype()`.
+   - Add function `kprintf_EMUPRINT_vnode_uio()` to `kern/dev/lamebus/emu.c`and
+   use the former in the latter. Remove function `kprintf_EMUPRINT_struct_uio()`.
+   - Rename `kprintf_EMUPRINT_vnode_o()` to `kprintf_EMUPRINT_vnode_openflags()`.
+   - Add function `kprintf_EMUPRINT_vnode_off()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_truncate()` and `emufs_truncate_isdir()`.
+   - Add function `kprintf_EMUPRINT_vnode_name()` to `kern/dev/lamebus/emu.c`
+   and use the former in the latter.
+   - Add function `kprintf_EMUPRINT_vnode_name_excl_mode()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_creat()` and `emufs_creat_notdir()`.
+   - Add function `kprintf_EMUPRINT_vnode_name_mode()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_mkdir()` and `emufs_mkdir_notdir()`.
+   - Add function `kprintf_EMUPRINT_vnode_name_target()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_link()` and `emufs_link_notdir()`.
+   - Add function `kprintf_EMUPRINT_vnode_n_vnode_n()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_rename()` and `emufs_rename_notdir()`.
+   - Remove function `kprintf_EMUPRINT_d()`.
+
+20250426 VideoGamePlotliner
+   - Group `kprintf_EMUPRINT_*()` (as well as `vnode_ops_string()`)
+   together. In other words, place them end-to-end. Also, for each
+   of those functions, put `static`, the return type, and the rest
+   of the function's signature on 3 different lines, because that's
+   how the signatures of the other (non-`inline`) functions in
+   `kern/dev/lamebus/emu.c` are formatted. Of course, make sure
+   there are no compilation errors.
+   - Add functions `fs_ops_string()` and `fs_root_vnode_ops_string()`
+   to `kern/dev/lamebus/emu.c`.
+   - Add a `const struct fs *` parameter to `kprintf_EMUPRINT_s()`
+   and rename the latter to `kprintf_EMUPRINT_fs_s()`.
+   - Add `kprintf_EMUPRINT_fs_d()` to `kern/dev/lamebus/emu.c`. Use
+   the former in the latter.
+   - Fix indents in `kprintf_EMUPRINT_fs_s()`. Make two string
+   literals in `vnode_ops_string()` more descriptive.
+   - Double the value of `DELAYBUFSIZE`.
+
+20250424 VideoGamePlotliner
+   - Make `kprintf_EMUPRINT_struct_stat()` more descriptive.
+   - Add `const struct vnode *` parameter to `kprintf_EMUPRINT_o()`.
+   - Fix a typo in a comment in `kprintf_EMUPRINT_o()`.
+   - Add a function called `kprintf_EMUPRINT_v()` to `emu.c`.
+   - Use `kprintf_EMUPRINT_v()` in several functions in `emu.c`.
+
+20250420 VideoGamePlotliner
+   - Fix a typo in the change log: replace "20240419" with "20250419".
+
+20250419 VideoGamePlotliner
+   - Delete `.github/workflows/main.yml`.
+   - Create `.github/workflows/userland-ci.yml` and
+   `userland/ci.mk`.
+
+20250413 VideoGamePlotliner
+   - Fix a typo in the comments for `kprintf_EMUPRINT_o()`.
+   - Add `kprintf_EMUPRINT_userptr_t()` and `kprintf_EMUPRINT_struct_*()`
+   to `kern/dev/lamebus/emu.c`.
+   - Replace "Based on part on nullprintopen()" comment in
+   `kprintf_EMUPRINT_o()` with "Based on part on `nullprintopen()`".
+   - Begin using `kprintf_EMUPRINT_struct_*()` and
+   `kprintf_EMUPRINT_userptr_t()` in various functions in
+   `kern/dev/lamebus/emu.c`.
+
+20250412 VideoGamePlotliner
+   - Disable `EMUPRINT_*()` functions with `#if 0`.
+   - Remove code in `kern/dev/lamebus/emu.c` within `#if 0` blocks.
+   - Add `kprintf_EMUPRINT_*()` functions.
+   - Use `kprintf_EMUPRINT_*()` in each function stored in the
+   function table called `emufs_fsops`.
+   - Use `kprintf_EMUPRINT_*()` in each function stored in the
+   function table called `emufs_fileops`.
+   - Use `kprintf_EMUPRINT_*()` in each function stored in the
+   function table called `emufs_dirops`.
+
+20250409 VideoGamePlotliner
+   - Remove `EMUPRINT_*()` macros and replace them with actual
+   functions.
+
+20250408 VideoGamePlotliner
+   - Warn users that EMUPRINT text slows down fs* commands in
+   OS/161.
+   - Add "<<<<<<<< " and " >>>>>>>>" to the EMUPRINT text.
+   - Expand the `dv1` command so that `nullprint:` isn't the
+   only filename accepted by `devtest1()`.
+
 20240413 VideoGamePlotliner
    - Verify that `_exit()` has been correctly implemented.
+   - Begin to add the `emuprint` option, which will make emufs
+   print its actions to the console.
+   - Edit `kern/conf/conf.kern`.
+   - Edit `kern/conf/DUMBVM`.
+   - Edit `kern/conf/DUMBVM-OPT`.
+   - Edit `kern/conf/GENERIC`.
+   - Edit `kern/conf/GENERIC-OPT`.
+   - Change `emufs_fsops` in `kern/dev/lamebus/emu.c` to support
+   the `emuprint` option.
+   - Change `emufs_fileops` in `kern/dev/lamebus/emu.c` to support
+   the `emuprint` option.
+   - Change `emufs_dirops` in `kern/dev/lamebus/emu.c` to support
+   the `emuprint` option.
 
 20240410 VideoGamePlotliner
    - Test the `nullprint` device both with and without the

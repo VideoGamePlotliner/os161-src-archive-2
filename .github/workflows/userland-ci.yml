@@ -1,0 +1,45 @@
+# The following is based on https://github.com/VideoGamePlotliner/c-cpp-sandbox-archive/blob/daf6750d146a248c878e6aacd1deac60cfe578f0/.github/workflows/c-cpp.yml
+
+# This file is apparently from
+# https://github.com/actions/starter-workflows/blob/f90b59f7cd6c78cb77ba8274dd8b01499074948b/ci/c-cpp.yml
+
+# I had some help with this YML file from...
+# - https://docs.github.com/en/actions/writing-workflows/quickstart#creating-your-first-workflow
+# - https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow#using-multiple-events
+# - https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#using-multiple-events
+# - https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#using-a-single-event
+# - https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow#using-a-single-event
+# - https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#push
+# - https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request
+# - https://www.gnu.org/software/make/manual/make.html#index-test-_0028standard-target_0029
+# - https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#defaultsrun
+# - https://www.gnu.org/software/make/manual/make.html#index-_002d_002dmakefile-2
+# - https://www.gnu.org/software/make/manual/make.html#Makefile-Names
+
+name: Userland folder CI
+
+on: [push, pull_request]
+
+defaults:
+  run:
+    working-directory: ./userland
+
+jobs:
+  build:
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: pwd
+      run: pwd
+    - name: make -f ci.mk
+      run: make -f ci.mk
+    - name: make check -f ci.mk
+      run: make check -f ci.mk
+    - name: make clean -f ci.mk
+      run: make clean -f ci.mk

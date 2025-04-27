@@ -54,6 +54,50 @@
 #include <vfs.h>
 #include <emufs.h>
 #include "autoconf.h"
+#include "opt-emuprint.h"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Copied from `kern/include/types.h` */
+
+typedef struct __userptr *userptr_t;
+typedef __u32 uint32_t;
+typedef _Bool bool;
+
+
+
+/* Based on parts of `kern/include/types.h` */
+
+#ifndef true
+#define true 1
+#endif /* true */
+
+#ifndef false
+#define false 0
+#endif /* false */
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* Register offsets */
 #define REG_HANDLE    0
@@ -90,6 +134,720 @@
 #define EMU_RES_NOTDIR       11
 #define EMU_RES_UNKNOWN      12
 #define EMU_RES_UNSUPP       13
+
+
+
+
+
+
+
+
+
+
+
+
+#if OPT_EMUPRINT
+static const char *vnode_ops_string(const struct vnode *v);
+static const char *fs_ops_string(const struct fs *fs);
+static const char *fs_root_vnode_ops_string(const struct fs *fs);
+#endif /* OPT_EMUPRINT */
+
+
+
+
+
+
+
+
+
+
+
+/*
+ * If `v` is of the type `struct vnode *`, call this function like this: `kprintf_EMUPRINT_vnode_openflags(__func__, result, v, openflags);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_openflags(const char *funcname, int result, const struct vnode *v, int openflags)
+{
+#if OPT_EMUPRINT
+	// Based on part of `nullprintopen()`
+	int how = openflags & O_ACCMODE;
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                Read only: %s\n"
+			"      ||               Write only: %s\n"
+			"      ||           Read and write: %s\n"
+			"      ||                 Creating: %s\n"
+			"      ||   Don't create if exists: %s\n"
+			"      ||               Truncating: %s\n"
+			"      ||                Appending: %s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			(how == O_RDONLY) ? "yes" : "no",
+			(how == O_WRONLY) ? "yes" : "no",
+			(how == O_RDWR) ? "yes" : "no",
+			(openflags & O_CREAT) ? "yes" : "no",
+			(openflags & O_EXCL) ? "yes" : "no",
+			(openflags & O_TRUNC) ? "yes" : "no",
+			(openflags & O_APPEND) ? "yes" : "no");
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)openflags;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * This function's name ends with "_d" because "%d" in `kprintf()` means `int`.
+ * If `v` is of the type `struct vnode *`, call this function like this: `kprintf_EMUPRINT_vnode_d(__func__, result, v);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_d(const char *funcname, int result, const struct vnode *v)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v));
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_d()` and `kprintf_EMUPRINT_fs_s()`.
+ * If `v` is of the type `struct vnode *`, call this function like this: `kprintf_EMUPRINT_vnode_name(__func__, result, v, name);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_name(const char *funcname, int result, const struct vnode *v, const char *name)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                     Name: %s%s%s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			name ? "\"" : "",
+			name ? name : "NULL",
+			name ? "\"" : "");
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)name;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_name()`.
+ * If `v1` and `v2` are of the type `struct vnode *`, call this function like this:
+ * `kprintf_EMUPRINT_vnode_n_vnode_n(__func__, result, v1, n1, v2, n2);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_n_vnode_n(const char *funcname, int result, const struct vnode *v1, const char *n1,
+								 const struct vnode *v2, const char *n2)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||              Vnode 1 ops: %s\n"
+			"      ||                       N1: %s%s%s\n"
+			"      ||              Vnode 2 ops: %s\n"
+			"      ||                       N2: %s%s%s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v1),
+			n1 ? "\"" : "",
+			n1 ? n1 : "NULL",
+			n1 ? "\"" : "",
+			vnode_ops_string(v2),
+			n2 ? "\"" : "",
+			n2 ? n2 : "NULL",
+			n2 ? "\"" : "");
+#else
+	(void)funcname;
+	(void)result;
+	(void)v1;
+	(void)n1;
+	(void)v2;
+	(void)n1;
+	(void)n2;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_name()`.
+ * If `v` and `target` are of the type `struct vnode *`, call this function like this:
+ * `kprintf_EMUPRINT_vnode_name_target(__func__, result, v, name, target);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_name_target(const char *funcname, int result, const struct vnode *v, const char *name, const struct vnode *target)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                     Name: %s%s%s\n"
+			"      ||         Target vnode ops: %s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			name ? "\"" : "",
+			name ? name : "NULL",
+			name ? "\"" : "",
+			vnode_ops_string(target));
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)name;
+	(void)target;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_name()`.
+ * If `v` is of the type `struct vnode *`, call this function like this:
+ * `kprintf_EMUPRINT_vnode_contents_name(__func__, result, v, contents, name);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_contents_name(const char *funcname, int result, const struct vnode *v, const char *contents, const char *name)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                 Contents: %s%s%s\n"
+			"      ||                     Name: %s%s%s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			contents ? "\"" : "",
+			contents ? contents : "NULL",
+			contents ? "\"" : "",
+			name ? "\"" : "",
+			name ? name : "NULL",
+			name ? "\"" : "");
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)contents;
+	(void)name;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_name()`.
+ * If `v` is of the type `struct vnode *`, call this function like this:
+ * `kprintf_EMUPRINT_vnode_name_excl_mode(__func__, result, v, name, excl, mode);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_name_excl_mode(const char *funcname, int result, const struct vnode *v,
+									  const char *name, bool excl, mode_t mode)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                     Name: %s%s%s\n"
+			"      ||                     Excl: %s\n"
+			"      ||                     Mode: 0%o\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			name ? "\"" : "",
+			name ? name : "NULL",
+			name ? "\"" : "",
+			excl ? "true" : "false",
+			mode);
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)name;
+	(void)excl;
+	(void)mode;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_name_excl_mode()`.
+ * If `v` is of the type `struct vnode *`, call this function like this:
+ * `kprintf_EMUPRINT_vnode_name_mode(__func__, result, v, name, mode);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_name_mode(const char *funcname, int result, const struct vnode *v,
+								 const char *name, mode_t mode)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                     Name: %s%s%s\n"
+			"      ||                     Mode: 0%o\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			name ? "\"" : "",
+			name ? name : "NULL",
+			name ? "\"" : "",
+			mode);
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)name;
+	(void)mode;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_d()`.
+ * If `v` is of the type `struct vnode *` and `len` is of the type `off_t`,
+ * call this function like this: `kprintf_EMUPRINT_vnode_off(__func__, result, v, len);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_off(const char *funcname, int result, const struct vnode *v, off_t len)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                      Len: %lld\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			len);
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)len;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_d()` and `nullprintio()`.
+ * This function's name ends with "_d" because "%d" in `kprintf()` means `int`.
+ * If `v` is of the type `struct vnode *` and `uio` is of the type `struct uio *`,
+ * call this function like this: `kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_uio(const char *funcname, int result, const struct vnode *v, const struct uio *uio)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	if (uio)
+	{
+		const off_t uio_offset = uio->uio_offset; /* Desired offset into object */
+		const size_t uio_resid = uio->uio_resid;  /* Remaining amt of data to xfer */
+		const enum uio_rw uio_rw = uio->uio_rw;	  /* Whether op is a read or write */
+
+		kprintf("\n"
+				"<<<<<<<<\n"
+				"      || emuprint: %s() returned %d, which means %s%s%s\n"
+				"      ||                Vnode ops: %s\n"
+				"      ||                   Offset: %lld\n"
+				"      ||           Remaining data: %u byte%s\n"
+				"      ||                Operation: %s\n"
+				"      >>>>>>>>\n",
+				funcname,
+				result,
+				s ? "\"" : "",
+				s ? s : "NULL",
+				s ? "\"" : "",
+				vnode_ops_string(v),
+				uio_offset,
+				uio_resid,
+				(uio_resid == 1) ? "" : "s",
+				(uio_rw == UIO_READ) ? "Reading" : ((uio_rw == UIO_WRITE) ? "Writing" : "(unknown uio operation)"));
+	}
+	else
+	{
+		kprintf("\n"
+				"<<<<<<<<\n"
+				"      || emuprint: %s() returned %d, which means %s%s%s\n"
+				"      ||                Vnode ops: %s\n"
+				"      ||                   Offset: (NULL uio)\n"
+				"      ||           Remaining data: (NULL uio)\n"
+				"      ||                Operation: (NULL uio)\n"
+				"      >>>>>>>>\n",
+				funcname,
+				result,
+				s ? "\"" : "",
+				s ? s : "NULL",
+				s ? "\"" : "",
+				vnode_ops_string(v));
+	}
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)uio;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_d()`.
+ * If `v` is of the type `struct vnode *`, call this function like
+ * `kprintf_EMUPRINT_vnode_gettype(__func__, r, v, "S_IFREG");` or
+ * `kprintf_EMUPRINT_vnode_gettype(__func__, r, v, "S_IFDIR");`.
+ * 
+ * According to `kern/include/vnode.h`,
+ * 
+ *    vop_gettype     - Return type of file. The values for file types
+ *                      are in kern/stattypes.h.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_gettype(const char *funcname, int r, const struct vnode *v, const char *file_type_as_string)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(r);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                File type: %s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			r,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			file_type_as_string ? file_type_as_string : "(NULL file type string)");
+#else
+	(void)funcname;
+	(void)r;
+	(void)v;
+	(void)file_type_as_string;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_d()`.
+ * If `v` is of the type `struct vnode *` and `statbuf` is of the type `struct stat *`,
+ * call this function like this: `kprintf_EMUPRINT_vnode_d(__func__, result, v, statbuf);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_stat(const char *funcname, int result, const struct vnode *v, const struct stat *statbuf)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	if (statbuf)
+	{
+		// Refer to `struct stat` in `stat.h`.
+
+		/* Essential fields */
+		const off_t st_size = statbuf->st_size;		   /* file size in bytes */
+		const mode_t st_mode = statbuf->st_mode;	   /* file type and protection mode */
+		const nlink_t st_nlink = statbuf->st_nlink;	   /* number of hard links */
+		const blkcnt_t st_blocks = statbuf->st_blocks; /* number of blocks file is using */
+
+		/* Identity */
+		// const dev_t st_dev = statbuf->st_dev; /* device object lives on */
+		// const ino_t st_ino = statbuf->st_ino; /* inode number (serial number) of object */
+		// const dev_t st_rdev = statbuf->st_rdev; /* device object is (if a device) */
+
+		/* Timestamps */
+		const time_t st_atime = statbuf->st_atime;		  /* last access time: seconds */
+		const time_t st_ctime = statbuf->st_ctime;		  /* inode change time: seconds */
+		const time_t st_mtime = statbuf->st_mtime;		  /* modification time: seconds */
+		const __u32 st_atimensec = statbuf->st_atimensec; /* last access time: nanoseconds */
+		const __u32 st_ctimensec = statbuf->st_ctimensec; /* inode change time: nanoseconds */
+		const __u32 st_mtimensec = statbuf->st_mtimensec; /* modification time: nanoseconds */
+
+		/* Permissions (also st_mode) */
+		// const uid_t st_uid = statbuf->st_uid; /* owner */
+		// const gid_t st_gid = statbuf->st_gid; /* group */
+
+		/* Other */
+		// const __u32 st_gen = statbuf->st_gen; /* file generation number (root only) */
+		const blksize_t st_blksize = statbuf->st_blksize; /* recommended I/O block size */
+
+		// Refer to `__pf_getnum()` for % explanations
+		// Refer to every usage of 0664 in this repository for mode_t
+		kprintf("\n"
+				"<<<<<<<<\n"
+				"      || emuprint: %s() returned %d, which means %s%s%s\n"
+				"      ||                Vnode ops: %s\n"
+				"      ||                File size: %lld byte%s\n"
+				"      ||                     Mode: 0%o\n"
+				"      ||           Num hard links: %u\n"
+				"      ||  Num blocks used by file: %u\n"
+				"      ||         Last access time: %lld.%09u second%s\n"
+				"      ||        Inode change time: %lld.%09u second%s\n"
+				"      ||        Modification time: %lld.%09u second%s\n"
+				"      ||         Ideal block size: %u byte%s\n" // Based on "Block size of device: %u byte%s" in `nullprintopen()`
+				"      >>>>>>>>\n",
+				funcname,
+				result,
+				s ? "\"" : "",
+				s ? s : "NULL",
+				s ? "\"" : "",
+				vnode_ops_string(v),
+
+				st_size,
+				(st_size == 1) ? "" : "s",
+				st_mode,
+				st_nlink,
+				st_blocks,
+
+				// st_dev,
+				// st_ino,
+				// st_rdev,
+
+				st_atime,
+				st_atimensec,
+				(st_atime == 1 && st_atimensec == 0) ? "" : "s",
+
+				st_ctime,
+				st_ctimensec,
+				(st_ctime == 1 && st_ctimensec == 0) ? "" : "s",
+
+				st_mtime,
+				st_mtimensec,
+				(st_mtime == 1 && st_mtimensec == 0) ? "" : "s",
+
+				// st_uid,
+				// st_gid,
+
+				// st_gen,
+				st_blksize,
+				(st_blksize == 1) ? "" : "s");
+	}
+	else
+	{
+		kprintf("\n"
+				"<<<<<<<<\n"
+				"      || emuprint: %s() returned %d, which means %s%s%s\n"
+				"      ||                Vnode ops: %s\n"
+				"      ||                File size: (NULL statbuf)\n"
+				"      ||                     Mode: (NULL statbuf)\n"
+				"      ||           Num hard links: (NULL statbuf)\n"
+				"      ||  Num blocks used by file: (NULL statbuf)\n"
+				"      ||         Last access time: (NULL statbuf)\n"
+				"      ||        Inode change time: (NULL statbuf)\n"
+				"      ||        Modification time: (NULL statbuf)\n"
+				"      ||         Ideal block size: (NULL statbuf)\n"
+				"      >>>>>>>>\n",
+				funcname,
+				result,
+				s ? "\"" : "",
+				s ? s : "NULL",
+				s ? "\"" : "",
+				vnode_ops_string(v));
+	}
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)statbuf;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_d()`.
+ * If `v` is of the type `struct vnode *`, call this function like this: `kprintf_EMUPRINT_vnode_ioctl(__func__, result, v, op);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_ioctl(const char *funcname, int result, const struct vnode *v, int op)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                Vnode ops: %s\n"
+			"      ||                 Ioctl op: %d\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			vnode_ops_string(v),
+			op);
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+	(void)op;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * Based on `kprintf_EMUPRINT_vnode_d()`.
+ * This function's name ends with "_b" because "b" is the first letter of `bool`.
+ * If `v` is of the type `struct vnode *`, call this function like this: `kprintf_EMUPRINT_vnode_b(__func__, result, v);`.
+ */
+static
+void
+kprintf_EMUPRINT_vnode_b(const char *funcname, bool result, const struct vnode *v)
+{
+#if OPT_EMUPRINT
+	kprintf("\n"
+		"<<<<<<<<\n"
+		"      || emuprint: %s() returned %s\n"
+		"      ||                Vnode ops: %s\n"
+		"      >>>>>>>>\n",
+		funcname,
+		result ? "true" : "false",
+		vnode_ops_string(v));
+#else
+	(void)funcname;
+	(void)result;
+	(void)v;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * This function is based on `kprintf_EMUPRINT_vnode_d()`.
+ * This function's name ends with "_d" because "%d" in `kprintf()` means `int`.
+ * If `fs` is of the type `struct fs *`, call this function like this: `kprintf_EMUPRINT_fs_d(__func__, result, fs);`.
+ */
+static
+void
+kprintf_EMUPRINT_fs_d(const char *funcname, int result, const struct fs *fs)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      ||                   Fs ops: %s\n"
+			"      ||           Root vnode ops: %s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "",
+			fs_ops_string(fs),
+			fs_root_vnode_ops_string(fs));
+#else
+	(void)funcname;
+	(void)result;
+	(void)fs;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
+ * This function's name ends with "_s" because "%s" in `kprintf()` means `const char *` or `char *`.
+ * If `fs` is of the type `struct fs *`, call this function like this: `kprintf_EMUPRINT_fs_s(__func__, result, fs);`.
+ */
+static
+void
+kprintf_EMUPRINT_fs_s(const char *funcname, const char *result, const struct fs *fs)
+{
+#if OPT_EMUPRINT
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %s%s%s\n"
+			"      ||                   Fs ops: %s\n"
+			"      ||           Root vnode ops: %s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result ? "\"" : "",
+			result ? result : "NULL",
+			result ? "\"" : "",
+			fs_ops_string(fs),
+			fs_root_vnode_ops_string(fs));
+#else
+	(void)funcname;
+	(void)result;
+	(void)fs;
+#endif /* OPT_EMUPRINT */
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ////////////////////////////////////////////////////////////
 //
@@ -432,7 +1190,9 @@ emufs_eachopen(struct vnode *v, int openflags)
 	(void)v;
 	(void)openflags;
 
-	return 0;
+	int result = 0;
+	kprintf_EMUPRINT_vnode_openflags(__func__, result, v, openflags);
+	return result;
 }
 
 /*
@@ -442,20 +1202,27 @@ static
 int
 emufs_eachopendir(struct vnode *v, int openflags)
 {
+	int result;
 	switch (openflags & O_ACCMODE) {
 	    case O_RDONLY:
 		break;
 	    case O_WRONLY:
 	    case O_RDWR:
 	    default:
-		return EISDIR;
+		result = EISDIR;
+		kprintf_EMUPRINT_vnode_openflags(__func__, result, v, openflags);
+		return result;
 	}
 	if (openflags & O_APPEND) {
-		return EISDIR;
+		result = EISDIR;
+		kprintf_EMUPRINT_vnode_openflags(__func__, result, v, openflags);
+		return result;
 	}
 
 	(void)v;
-	return 0;
+	result = 0;
+	kprintf_EMUPRINT_vnode_openflags(__func__, result, v, openflags);
+	return result;
 }
 
 /*
@@ -489,7 +1256,9 @@ emufs_reclaim(struct vnode *v)
 		spinlock_release(&ev->ev_v.vn_countlock);
 		lock_release(ef->ef_emu->e_lock);
 		vfs_biglock_release();
-		return EBUSY;
+		result = EBUSY;
+		kprintf_EMUPRINT_vnode_d(__func__, result, v);
+		return result;
 	}
 	KASSERT(ev->ev_v.vn_refcount == 1);
 
@@ -504,6 +1273,7 @@ emufs_reclaim(struct vnode *v)
 	if (result) {
 		lock_release(ef->ef_emu->e_lock);
 		vfs_biglock_release();
+		kprintf_EMUPRINT_vnode_d(__func__, result, v);
 		return result;
 	}
 
@@ -530,7 +1300,9 @@ emufs_reclaim(struct vnode *v)
 	vfs_biglock_release();
 
 	kfree(ev);
-	return 0;
+	result = 0;
+	kprintf_EMUPRINT_vnode_d(__func__, result, v);
+	return result;
 }
 
 /*
@@ -557,6 +1329,7 @@ emufs_read(struct vnode *v, struct uio *uio)
 
 		result = emu_read(ev->ev_emu, ev->ev_handle, amt, uio);
 		if (result) {
+			kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
 			return result;
 		}
 
@@ -566,7 +1339,9 @@ emufs_read(struct vnode *v, struct uio *uio)
 		}
 	}
 
-	return 0;
+	result = 0;
+	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	return result;
 }
 
 /*
@@ -586,7 +1361,9 @@ emufs_getdirentry(struct vnode *v, struct uio *uio)
 		amt = EMU_MAXIO;
 	}
 
-	return emu_readdir(ev->ev_emu, ev->ev_handle, amt, uio);
+	int result = emu_readdir(ev->ev_emu, ev->ev_handle, amt, uio);
+	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	return result;
 }
 
 /*
@@ -613,6 +1390,7 @@ emufs_write(struct vnode *v, struct uio *uio)
 
 		result = emu_write(ev->ev_emu, ev->ev_handle, amt, uio);
 		if (result) {
+			kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
 			return result;
 		}
 
@@ -622,7 +1400,9 @@ emufs_write(struct vnode *v, struct uio *uio)
 		}
 	}
 
-	return 0;
+	result = 0;
+	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	return result;
 }
 
 /*
@@ -640,7 +1420,9 @@ emufs_ioctl(struct vnode *v, int op, userptr_t data)
 	(void)op;
 	(void)data;
 
-	return EINVAL;
+	int result = EINVAL;
+	kprintf_EMUPRINT_vnode_ioctl(__func__, result, v, op);
+	return result;
 }
 
 /*
@@ -657,18 +1439,22 @@ emufs_stat(struct vnode *v, struct stat *statbuf)
 
 	result = emu_getsize(ev->ev_emu, ev->ev_handle, &statbuf->st_size);
 	if (result) {
+		kprintf_EMUPRINT_vnode_stat(__func__, result, v, statbuf);
 		return result;
 	}
 
 	result = VOP_GETTYPE(v, &statbuf->st_mode);
 	if (result) {
+		kprintf_EMUPRINT_vnode_stat(__func__, result, v, statbuf);
 		return result;
 	}
 	statbuf->st_mode |= 0644; /* possibly a lie */
 	statbuf->st_nlink = 1;    /* might be a lie, but doesn't matter much */
 	statbuf->st_blocks = 0;   /* almost certainly a lie */
 
-	return 0;
+	result = 0;
+	kprintf_EMUPRINT_vnode_stat(__func__, result, v, statbuf);
+	return result;
 }
 
 /*
@@ -680,7 +1466,9 @@ emufs_file_gettype(struct vnode *v, uint32_t *result)
 {
 	(void)v;
 	*result = S_IFREG;
-	return 0;
+	int r = 0;
+	kprintf_EMUPRINT_vnode_gettype(__func__, r, v, "S_IFREG");
+	return r;
 }
 
 /*
@@ -692,7 +1480,9 @@ emufs_dir_gettype(struct vnode *v, uint32_t *result)
 {
 	(void)v;
 	*result = S_IFDIR;
-	return 0;
+	int r = 0;
+	kprintf_EMUPRINT_vnode_gettype(__func__, r, v, "S_IFDIR");
+	return r;
 }
 
 /*
@@ -703,7 +1493,9 @@ bool
 emufs_isseekable(struct vnode *v)
 {
 	(void)v;
-	return true;
+	bool result = true;
+	kprintf_EMUPRINT_vnode_b(__func__, result, v);
+	return result;
 }
 
 /*
@@ -714,7 +1506,9 @@ int
 emufs_fsync(struct vnode *v)
 {
 	(void)v;
-	return 0;
+	int result = 0;
+	kprintf_EMUPRINT_vnode_d(__func__, result, v);
+	return result;
 }
 
 /*
@@ -725,7 +1519,9 @@ int
 emufs_truncate(struct vnode *v, off_t len)
 {
 	struct emufs_vnode *ev = v->vn_data;
-	return emu_trunc(ev->ev_emu, ev->ev_handle, len);
+	int result = emu_trunc(ev->ev_emu, ev->ev_handle, len);
+	kprintf_EMUPRINT_vnode_off(__func__, result, v, len);
+	return result;
 }
 
 /*
@@ -746,17 +1542,21 @@ emufs_creat(struct vnode *dir, const char *name, bool excl, mode_t mode,
 	result = emu_open(ev->ev_emu, ev->ev_handle, name, true, excl, mode,
 			  &handle, &isdir);
 	if (result) {
+		kprintf_EMUPRINT_vnode_name_excl_mode(__func__, result, dir, name, excl, mode);
 		return result;
 	}
 
 	result = emufs_loadvnode(ef, handle, isdir, &newguy);
 	if (result) {
 		emu_close(ev->ev_emu, handle);
+		kprintf_EMUPRINT_vnode_name_excl_mode(__func__, result, dir, name, excl, mode);
 		return result;
 	}
 
 	*ret = &newguy->ev_v;
-	return 0;
+	result = 0;
+	kprintf_EMUPRINT_vnode_name_excl_mode(__func__, result, dir, name, excl, mode);
+	return result;
 }
 
 /*
@@ -776,17 +1576,21 @@ emufs_lookup(struct vnode *dir, char *pathname, struct vnode **ret)
 	result = emu_open(ev->ev_emu, ev->ev_handle, pathname, false, false, 0,
 			  &handle, &isdir);
 	if (result) {
+		kprintf_EMUPRINT_vnode_name(__func__, result, dir, pathname);
 		return result;
 	}
 
 	result = emufs_loadvnode(ef, handle, isdir, &newguy);
 	if (result) {
 		emu_close(ev->ev_emu, handle);
+		kprintf_EMUPRINT_vnode_name(__func__, result, dir, pathname);
 		return result;
 	}
 
 	*ret = &newguy->ev_v;
-	return 0;
+	result = 0;
+	kprintf_EMUPRINT_vnode_name(__func__, result, dir, pathname);
+	return result;
 }
 
 /*
@@ -798,27 +1602,36 @@ emufs_lookparent(struct vnode *dir, char *pathname, struct vnode **ret,
 		 char *buf, size_t len)
 {
 	char *s;
+	int result;
 
 	s = strrchr(pathname, '/');
 	if (s==NULL) {
 		/* just a last component, no directory part */
 		if (strlen(pathname)+1 > len) {
-			return ENAMETOOLONG;
+			result = ENAMETOOLONG;
+			kprintf_EMUPRINT_vnode_name(__func__, result, dir, pathname);
+			return result;
 		}
 		VOP_INCREF(dir);
 		*ret = dir;
 		strcpy(buf, pathname);
-		return 0;
+		result = 0;
+		kprintf_EMUPRINT_vnode_name(__func__, result, dir, pathname);
+		return result;
 	}
 
 	*s = 0;
 	s++;
 	if (strlen(s)+1 > len) {
-		return ENAMETOOLONG;
+		result = ENAMETOOLONG;
+		kprintf_EMUPRINT_vnode_name(__func__, result, dir, pathname);
+		return result;
 	}
 	strcpy(buf, s);
 
-	return emufs_lookup(dir, pathname, ret);
+	result = emufs_lookup(dir, pathname, ret);
+	kprintf_EMUPRINT_vnode_name(__func__, result, dir, pathname);
+	return result;
 }
 
 /*
@@ -830,17 +1643,22 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 {
 	struct emufs_vnode *ev = v->vn_data;
 	struct emufs_fs *ef = v->vn_fs->fs_data;
+	int result;
 
 	if (ev == ef->ef_root) {
 		/*
 		 * Root directory - name is empty string
 		 */
-		return 0;
+		result = 0;
+		kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+		return result;
 	}
 
 	(void)uio;
 
-	return ENOSYS;
+	result = ENOSYS;
+	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	return result;
 }
 
 /*
@@ -850,8 +1668,10 @@ static
 int
 emufs_mmap(struct vnode *v)
 {
-	(void)v;
-	return ENOSYS;
+	// (void)v;
+	int result = ENOSYS;
+	kprintf_EMUPRINT_vnode_d(__func__, result, v);
+	return result;
 }
 
 //////////////////////////////
@@ -867,7 +1687,9 @@ emufs_symlink(struct vnode *v, const char *contents, const char *name)
 	(void)v;
 	(void)contents;
 	(void)name;
-	return ENOSYS;
+	int result = ENOSYS;
+	kprintf_EMUPRINT_vnode_contents_name(__func__, result, v, contents, name);
+	return result;
 }
 
 static
@@ -877,7 +1699,9 @@ emufs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	(void)v;
 	(void)name;
 	(void)mode;
-	return ENOSYS;
+	int result = ENOSYS;
+	kprintf_EMUPRINT_vnode_name_mode(__func__, result, v, name, mode);
+	return result;
 }
 
 static
@@ -887,7 +1711,9 @@ emufs_link(struct vnode *v, const char *name, struct vnode *target)
 	(void)v;
 	(void)name;
 	(void)target;
-	return ENOSYS;
+	int result = ENOSYS;
+	kprintf_EMUPRINT_vnode_name_target(__func__, result, v, name, target);
+	return result;
 }
 
 static
@@ -896,7 +1722,9 @@ emufs_remove(struct vnode *v, const char *name)
 {
 	(void)v;
 	(void)name;
-	return ENOSYS;
+	int result = ENOSYS;
+	kprintf_EMUPRINT_vnode_name(__func__, result, v, name);
+	return result;
 }
 
 static
@@ -905,7 +1733,9 @@ emufs_rmdir(struct vnode *v, const char *name)
 {
 	(void)v;
 	(void)name;
-	return ENOSYS;
+	int result = ENOSYS;
+	kprintf_EMUPRINT_vnode_name(__func__, result, v, name);
+	return result;
 }
 
 static
@@ -917,7 +1747,9 @@ emufs_rename(struct vnode *v1, const char *n1,
 	(void)n1;
 	(void)v2;
 	(void)n2;
-	return ENOSYS;
+	int result = ENOSYS;
+	kprintf_EMUPRINT_vnode_n_vnode_n(__func__, result, v1, n1, v2, n2);
+	return result;
 }
 
 //////////////////////////////
@@ -940,7 +1772,9 @@ int
 emufs_void_op_isdir(struct vnode *v)
 {
 	(void)v;
-	return EISDIR;
+	int result = EISDIR;
+	kprintf_EMUPRINT_vnode_d(__func__, result, v);
+	return result;
 }
 
 static
@@ -949,7 +1783,9 @@ emufs_uio_op_isdir(struct vnode *v, struct uio *uio)
 {
 	(void)v;
 	(void)uio;
-	return EISDIR;
+	int result = EISDIR;
+	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	return result;
 }
 
 static
@@ -958,7 +1794,9 @@ emufs_uio_op_notdir(struct vnode *v, struct uio *uio)
 {
 	(void)v;
 	(void)uio;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	return result;
 }
 
 static
@@ -967,7 +1805,9 @@ emufs_name_op_notdir(struct vnode *v, const char *name)
 {
 	(void)v;
 	(void)name;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_name(__func__, result, v, name);
+	return result;
 }
 
 static
@@ -976,7 +1816,9 @@ emufs_readlink_notlink(struct vnode *v, struct uio *uio)
 {
 	(void)v;
 	(void)uio;
-	return EINVAL;
+	int result = EINVAL;
+	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	return result;
 }
 
 static
@@ -989,7 +1831,9 @@ emufs_creat_notdir(struct vnode *v, const char *name, bool excl, mode_t mode,
 	(void)excl;
 	(void)mode;
 	(void)retval;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_name_excl_mode(__func__, result, v, name, excl, mode);
+	return result;
 }
 
 static
@@ -999,7 +1843,9 @@ emufs_symlink_notdir(struct vnode *v, const char *contents, const char *name)
 	(void)v;
 	(void)contents;
 	(void)name;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_contents_name(__func__, result, v, contents, name);
+	return result;
 }
 
 static
@@ -1009,7 +1855,9 @@ emufs_mkdir_notdir(struct vnode *v, const char *name, mode_t mode)
 	(void)v;
 	(void)name;
 	(void)mode;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_name_mode(__func__, result, v, name, mode);
+	return result;
 }
 
 static
@@ -1019,7 +1867,9 @@ emufs_link_notdir(struct vnode *v, const char *name, struct vnode *target)
 	(void)v;
 	(void)name;
 	(void)target;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_name_target(__func__, result, v, name, target);
+	return result;
 }
 
 static
@@ -1031,7 +1881,9 @@ emufs_rename_notdir(struct vnode *v1, const char *n1,
 	(void)n1;
 	(void)v2;
 	(void)n2;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_n_vnode_n(__func__, result, v1, n1, v2, n2);
+	return result;
 }
 
 static
@@ -1041,7 +1893,9 @@ emufs_lookup_notdir(struct vnode *v, char *pathname, struct vnode **result)
 	(void)v;
 	(void)pathname;
 	(void)result;
-	return ENOTDIR;
+	int r = ENOTDIR;
+	kprintf_EMUPRINT_vnode_name(__func__, r, v, pathname);
+	return r;
 }
 
 static
@@ -1054,7 +1908,9 @@ emufs_lookparent_notdir(struct vnode *v, char *pathname, struct vnode **result,
 	(void)result;
 	(void)buf;
 	(void)len;
-	return ENOTDIR;
+	int r = ENOTDIR;
+	kprintf_EMUPRINT_vnode_name(__func__, r, v, pathname);
+	return r;
 }
 
 
@@ -1064,7 +1920,9 @@ emufs_truncate_isdir(struct vnode *v, off_t len)
 {
 	(void)v;
 	(void)len;
-	return ENOTDIR;
+	int result = ENOTDIR;
+	kprintf_EMUPRINT_vnode_off(__func__, result, v, len);
+	return result;
 }
 
 //////////////////////////////
@@ -1222,7 +2080,9 @@ int
 emufs_sync(struct fs *fs)
 {
 	(void)fs;
-	return 0;
+	int result = 0;
+	kprintf_EMUPRINT_fs_d(__func__, result, fs);
+	return result;
 }
 
 /*
@@ -1234,7 +2094,9 @@ emufs_getvolname(struct fs *fs)
 {
 	/* We don't have a volume name beyond the device name */
 	(void)fs;
-	return NULL;
+	const char *result = NULL;
+	kprintf_EMUPRINT_fs_s(__func__, result, fs);
+	return result;
 }
 
 /*
@@ -1255,7 +2117,9 @@ emufs_getroot(struct fs *fs, struct vnode **ret)
 
 	VOP_INCREF(&ef->ef_root->ev_v);
 	*ret = &ef->ef_root->ev_v;
-	return 0;
+	int result = 0;
+	kprintf_EMUPRINT_fs_d(__func__, result, fs);
+	return result;
 }
 
 /*
@@ -1267,7 +2131,9 @@ emufs_unmount(struct fs *fs)
 {
 	/* Always prohibit unmount, as we're not really "mounted" */
 	(void)fs;
-	return EBUSY;
+	int result = EBUSY;
+	kprintf_EMUPRINT_fs_d(__func__, result, fs);
+	return result;
 }
 
 /*
@@ -1355,3 +2221,113 @@ config_emu(struct emu_softc *sc, int emuno)
 
 	return emufs_addtovfs(sc, name);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if OPT_EMUPRINT
+
+// Return value should not be NULL
+static
+const char *
+vnode_ops_string(const struct vnode *v)
+{
+#if OPT_EMUPRINT
+	if (!v)
+	{
+		return "(NULL vnode)";
+	}
+	else if (v->vn_ops == &emufs_fileops)
+	{
+		return "emufs_fileops";
+	}
+	else if (v->vn_ops == &emufs_dirops)
+	{
+		return "emufs_dirops";
+	}
+	else
+	{
+		return "(unknown vnode ops)";
+	}
+#else
+	(void)v;
+	return "";
+#endif /* OPT_EMUPRINT */
+}
+
+// Return value should not be NULL
+// Based on `vnode_ops_string()`
+static
+const char *
+fs_ops_string(const struct fs *fs)
+{
+#if OPT_EMUPRINT
+	if (!fs)
+	{
+		return "(NULL fs)";
+	}
+	else if (fs->fs_ops == &emufs_fsops)
+	{
+		return "emufs_fsops";
+	}
+	else
+	{
+		return "(unknown fs ops)";
+	}
+#else
+	(void)fs;
+	return "";
+#endif /* OPT_EMUPRINT */
+}
+
+// Return value should not be NULL
+// Based on `vnode_ops_string()` and `fs_ops_string()`
+static
+const char *
+fs_root_vnode_ops_string(const struct fs *fs)
+{
+#if OPT_EMUPRINT
+	if (!fs)
+	{
+		return "(NULL fs)";
+	}
+	else
+	{
+		const struct emufs_fs *ef = fs->fs_data;
+		if (!ef)
+		{
+			return "(NULL fs data)";
+		}
+		else
+		{
+			const struct emufs_vnode *ev = ef->ef_root;
+			if (!ev)
+			{
+				return "(NULL fs root)";
+			}
+			else
+			{
+				return vnode_ops_string(&ev->ev_v);
+			}
+		}
+	}
+#else
+	(void)fs;
+	return "";
+#endif /* OPT_EMUPRINT */
+}
+
+#endif /* OPT_EMUPRINT */

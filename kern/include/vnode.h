@@ -35,6 +35,16 @@ struct uio;
 struct stat;
 
 
+
+
+
+/* Copied from `kern/include/types.h` */
+typedef _Bool bool;
+
+
+
+
+
 /*
  * A struct vnode is an abstract representation of a file.
  *
