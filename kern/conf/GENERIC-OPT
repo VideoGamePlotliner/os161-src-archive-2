@@ -3,6 +3,8 @@
 # your own VM system.
 #
 # This config builds with optimization for performance testing.
+# Hence, don't enable the `emuprint` option in this file, because
+# doing so will make emufs print its actions to the console.
 
 include conf/conf.kern		# get definitions of available options
 

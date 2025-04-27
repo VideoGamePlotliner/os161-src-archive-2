@@ -50,6 +50,8 @@
 #include <vnode.h>
 #include <test.h>
 
+#include "opt-emuprint.h" // For `checkfilesystem()` below
+
 #define SLOGAN   "HODIE MIHI - CRAS TIBI\n"
 #define FILENAME "fstest.tmp"
 #define NCHUNKS  720
@@ -678,6 +680,10 @@ static
 int
 checkfilesystem(int nargs, char **args)
 {
+#if OPT_EMUPRINT
+	kprintf("Warning: EMUPRINT option enabled. EMUPRINT text may slow down this test.\n");
+#endif /* OPT_EMUPRINT */
+
 	char *device;
 
 	if (nargs != 2) {
