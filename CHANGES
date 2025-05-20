@@ -15,6 +15,123 @@ various other people, all of whom are (hopefully) listed below.
 OS/161 2.0.3 edits
 ------------------
 
+20250520 VideoGamePlotliner
+   - Use `warnx()` instead of `errx()` in `CWD_BUF_CHECK()`.
+   - Create `man/testbin/chdirtest.html` and base it on
+   `man/testbin/argtest.html`.
+   - Edit `man/testbin/Makefile` to compensate for the addition of `testbin/chdirtest`.
+   - Edit `man/testbin/index.html` to compensate for the addition of `testbin/chdirtest`.
+   - Edit `README.md` to compensate for the addition of `testbin/chdirtest`.
+
+20250519 VideoGamePlotliner
+   - Use `errx()` instead of `err()` in `CWD_BUF_CHECK()`.
+
+20250518 VideoGamePlotliner
+   - Delete code created on 20250517 concerning `mkdir()`, `rmdir()`, and `getdirentry()`.
+   - Instead of implementing `mkdir()`, `rmdir()`, and `getdirentry()`,
+   focus on creating `testbin/chdirtest`. Begin creating it by creating
+   `userland/testbin/chdirtest/chdirtest.c`.
+   - Create `userland/testbin/chdirtest/Makefile` and base it on
+   `userland/testbin/getpidtest/Makefile`.
+   - Edit `userland/testbin/Makefile` to compensate for the addition of `testbin/chdirtest`.
+   - Remove the `kprintf()` line from `sys_chdir()`.
+
+20250517 VideoGamePlotliner
+   - Use `bzero(kernpathname, sizeof(kernpathname));` in `sys_chdir()`.
+   - Move `kernpathname[sizeof(kernpathname) - 1] = 0;` down in `sys_chdir()`.
+   - Begin to implement `mkdir()`, `rmdir()`, and `getdirentry()`.
+
+20250516 VideoGamePlotliner
+   - Add function `sys_fstat_console()` to `kern/arch/mips/syscall/syscall.c`
+   and use the former in `sys_fstat()`.
+
+20250515 VideoGamePlotliner
+   - Continue to implement the system call `fstat()`.
+   - Add function `disk_cleanup()` to `userland/sbin/mksfs/disk.h`
+   and `userland/sbin/mksfs/disk.c`.
+   - Use `disk_cleanup()` in `userland/sbin/dumpsfs/dumpsfs.c`
+   and `userland/sbin/mksfs/disk.c`.
+
+20250514 VideoGamePlotliner
+   - Add member `uio_emuprint_during_read` to `struct uio` and use
+   the former in `uio_kinit()`.
+   - Add `ku.uio_emuprint_during_read = false;` to `fd_seek()`.
+   - Use `fd_acquire_curpos_lock()`, `fd_release_curpos_lock()`, and `fd_seek()`
+   in `sys_read()` and `sys_write()`.
+   - Use `if (uio->uio_emuprint_during_read)` in `emufs_read()`.
+   - Undo the changes made to `userland/testbin/bigseek/bigseek.c`
+   on 20250513.
+   - Add function `sparsefile_cleanup()` to `userland/testbin/sparsefile/sparsefile.c`
+   and use the former in the latter.
+   - Use `errno = EINVAL` in `main()` in `userland/testbin/sparsefile/sparsefile.c`.
+   - Use `int e = errno; close(file); errno = e;` in `tail()` in
+   `userland/testbin/tail/tail.c`.
+   - Replace `"%s"` in `userland/testbin/tail/tail.c` with `"%s(): %s", __func__`.
+
+20250513 VideoGamePlotliner
+   - Removed "Value of zero means EOF if `fdn_whence` is `SEEK_END`." from
+   `kern/arch/mips/syscall/syscall.c`.
+   - Add functions `fd_acquire_curpos_lock()`, `fd_release_curpos_lock()`, and `fd_seek()`
+   to `kern/arch/mips/syscall/syscall.c` and use them in `sys_lseek()`.
+   - Add arguments `int line1, int line2` to `dolseek()` in `userland/testbin/bigseek/bigseek.c`
+   - Add `, line, __LINE__` to calls to `dolseek()` in `tryseeking()`.
+   - Use all arguments of `dolseek()` in a `printf()` statement in `dolseek()`.
+   - Add arguments `int line` to `tryseeking()` in `userland/testbin/bigseek/bigseek.c`.
+   - Add `, __LINE__` to calls to `dolseek()` in `tryseeking()`.
+   - Use all arguments of `tryseeking()` in a `printf()` statement in `tryseeking()`.
+   - NEXT STEP: Use `fd_acquire_curpos_lock()`, `fd_release_curpos_lock()`, and `fd_seek()`
+   in `sys_read()` and `sys_write()`.
+
+20250511 VideoGamePlotliner
+   - Add function `bigseek_cleanup()` to `userland/testbin/bigseek/bigseek.c`
+   and use the former in the latter.
+   - Add a bounds check for `which` to `write_slogan()` and `check_slogan()`.
+   - Add `int e = 0`, `errno = 0`, and `e = errno` lines to `userland/testbin/bigseek/bigseek.c`.
+   - Change `errno == EFBIG` to `(e == EFBIG)` in `userland/testbin/bigseek/bigseek.c`.
+   - Begin to implement the system calls `lseek()` and `fstat()`.
+   - Rename fields `fd`, `v`, and `next` of `struct fdnode` to
+   `fdn_fd`, `fdn_v`, and `fdn_next`, respectively.
+   - Add fields `fdn_pos`, `fdn_whence`, and `fdn_curpos_lock` to `struct fdnode`.
+   - Continue to attempt to implement `lseek()`.
+
+20250504 VideoGamePlotliner
+   - Add parameter `argc` to `runprogram()`.
+   - Change the tip in `README.md` about the "hangman" option.
+   - In `userland/testbin/argtest/argtest.c`, change `i<=argc` to `i<argc`.
+   - Add parameters `argv_user`, `argc`, and `argv` to `as_define_stack()`.
+   - Call `spinlock_init(&stealmem_lock)` in `vm_bootstrap()`.
+   - Add function `vm_shutdown()`, the opposite of `vm_bootstrap()`.
+   - Add `stackdef_lock` to `kern/arch/mips/vm/dumbvm.c` and use the
+   former in `vm_bootstrap()` and `vm_shutdown()`.
+   - Add parameter `argv` to `runprogram()`.
+   - Add function `destroy_argv___runprogram()` to `kern/syscall/runprogram.c`
+   and use the former in `runprogram()`.
+   - Add variable `argv_user` to function `runprogram()` and use the
+   former in the latter.
+   - Fix "argument passing from menu not supported".
+   - Add `man/testbin/conmanaltered.html`, `man/testbin/filetestaltered.html`,
+   and `man/testbin/getpidtest.html` to the list in the section in `README.md`
+   named "`man` page for each program that is executable with the `p` command
+   in OS/161".
+   - Remove `man/testbin/guzzle.html`, `man/testbin/kitchen.html`,
+   `man/testbin/quinthuge.html`, `man/testbin/quintmat.html`,
+   `man/testbin/quintsort.html`, `man/testbin/sink.html`,
+   `man/testbin/sty.html`, and `man/testbin/userthreads.html` from
+   the list in the section in `README.md` named "`man` page for
+   each program that is executable with the `p` command in OS/161".
+   Remove the corresponding text from the list in the section in
+   `README.md` named "Syscalls required for such programs, according
+   to the `man` pages above".
+
+20250503 VideoGamePlotliner
+   - In `cmd_progthread()`, use `pname` instead of `args[0]` for the
+   "Running program ... failed" message.
+   - Add function `kprintf_EMUPRINT_d()` to `kern/dev/lamebus/emu.c`
+   and use the former in `emufs_reclaim()`.
+   - Add functions `vnode_check_EMUPRINT()` and `fs_check_EMUPRINT()`
+   to `kern/dev/lamebus/emu.c` and use those two functions in the
+   `*_ops_string()` functions in `kern/dev/lamebus/emu.c`.
+
 20250427 VideoGamePlotliner
    - Remove functions `kprintf_EMUPRINT_struct_fs()` and
    `kprintf_EMUPRINT_struct_vnode()`.
@@ -373,6 +490,7 @@ OS/161 2.0.3 edits
    and `p bin/pwd` to verify that `__getcwd()` has been correctly
    implemented.
    - Begin to implement the system calls `open()` and `close()`.
+   - Begin to implement the system call `chdir()`.
 
 20240209 VideoGamePlotliner
    - Verify and/or ensure correctness of the `cv_*()` functions.

@@ -38,6 +38,8 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <copyinout.h>
+#include <membar.h>
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -64,10 +66,24 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+/*
+ * Wrap as_define_stack in a spinlock.
+ * NOTE: Should there REALLY be only one spinlock for as_define_stack?
+ */
+static struct spinlock stackdef_lock = SPINLOCK_INITIALIZER;
+
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
+	spinlock_init(&stealmem_lock);
+	spinlock_init(&stackdef_lock);
+}
+
+void
+vm_shutdown(void)
+{
+	spinlock_cleanup(&stealmem_lock);
+	spinlock_cleanup(&stackdef_lock);
 }
 
 /*
@@ -374,12 +390,132 @@ as_complete_load(struct addrspace *as)
 	return 0;
 }
 
+/*
+ * Example:
+ * 
+ * Let's say that argc is3, argv[0] is "testbin/argtest",
+ * argv[1] is "foo", and argv[2] is "bars".
+ * 
+ * Let *argv_str become USERSTACK - 3 * sizeof(char *). Then...
+ * 
+ * Kernel Address   User Address                          User Address's Value 
+ * ---------------- ------------------------------------- -------------------------------------
+ * argv[2][0]       USERSTACK - 3 * sizeof(char *) - 25   'b'
+ * argv[2][1]       USERSTACK - 3 * sizeof(char *) - 24   'a'
+ * argv[2][2]       USERSTACK - 3 * sizeof(char *) - 23   'r'
+ * argv[2][3]       USERSTACK - 3 * sizeof(char *) - 22   's'
+ * argv[2][4]       USERSTACK - 3 * sizeof(char *) - 21   '\0'
+ * argv[1][0]       USERSTACK - 3 * sizeof(char *) - 20   'f'
+ * argv[1][1]       USERSTACK - 3 * sizeof(char *) - 19   'o'
+ * argv[1][2]       USERSTACK - 3 * sizeof(char *) - 18   'o'
+ * argv[1][3]       USERSTACK - 3 * sizeof(char *) - 17   '\0'
+ * argv[0][0]       USERSTACK - 3 * sizeof(char *) - 16   't'
+ * argv[0][1]       USERSTACK - 3 * sizeof(char *) - 15   'e'
+ * argv[0][2]       USERSTACK - 3 * sizeof(char *) - 14   's'
+ * argv[0][3]       USERSTACK - 3 * sizeof(char *) - 13   't'
+ * argv[0][4]       USERSTACK - 3 * sizeof(char *) - 12   'b'
+ * argv[0][5]       USERSTACK - 3 * sizeof(char *) - 11   'i'
+ * argv[0][6]       USERSTACK - 3 * sizeof(char *) - 10   'n'
+ * argv[0][7]       USERSTACK - 3 * sizeof(char *) - 9    '/'
+ * argv[0][8]       USERSTACK - 3 * sizeof(char *) - 8    'a'
+ * argv[0][9]       USERSTACK - 3 * sizeof(char *) - 7    'r'
+ * argv[0][10]      USERSTACK - 3 * sizeof(char *) - 6    'g'
+ * argv[0][11]      USERSTACK - 3 * sizeof(char *) - 5    't'
+ * argv[0][12]      USERSTACK - 3 * sizeof(char *) - 4    'e'
+ * argv[0][13]      USERSTACK - 3 * sizeof(char *) - 3    's'
+ * argv[0][14]      USERSTACK - 3 * sizeof(char *) - 2    't'
+ * argv[0][15]      USERSTACK - 3 * sizeof(char *) - 1    '\0'
+ * argv[0]          USERSTACK - 3 * sizeof(char *)        USERSTACK - 3 * sizeof(char *) - 16
+ * argv[1]          USERSTACK - 2 * sizeof(char *)        USERSTACK - 3 * sizeof(char *) - 20
+ * argv[2]          USERSTACK - 1 * sizeof(char *)        USERSTACK - 3 * sizeof(char *) - 25
+ * (n/a)            USERSTACK                             (n/a)
+ */
 int
-as_define_stack(struct addrspace *as, vaddr_t *stackptr)
+as_define_stack(struct addrspace *as, vaddr_t *stackptr, userptr_t *argv_user, int argc, char **argv)
 {
+	KASSERT(sizeof(char) == 1);
+	KASSERT(as != NULL);
 	KASSERT(as->as_stackpbase != 0);
 
+	KASSERT(stackptr != NULL);
+	KASSERT(argc > 0);
+	KASSERT(argv != NULL);
+	for (int i = 0; i < argc; i++)
+	{
+		KASSERT(argv[i] != NULL);
+	}
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+	int result;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+	spinlock_acquire(&stackdef_lock);
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
 	*stackptr = USERSTACK;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+
+	// How do we push stuff onto the stack? Well,
+	// according to the comments for USERSTACK in
+	// `kern/arch/mips/include/vm.h`, "the stack
+	// is subtract-then-store".
+
+	{
+		// Push argv itself onto the stack.
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		const size_t argv_size = argc * sizeof(char *);
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		*stackptr -= argv_size;
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		*argv_user = (userptr_t)(*stackptr); // Don't change *argv_user below this line.
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+	}
+
+	for (int i = 0; i < argc; i++)
+	{
+		// Push argv[i] onto the stack.
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		const size_t argv_i_size = strlen(argv[i]) + 1;
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		size_t actual;
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		*stackptr -= argv_i_size;
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		userptr_t argv_i_user = (userptr_t)(*stackptr);
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		result = copyout(&argv_i_user, (*argv_user) + i * sizeof(char *), sizeof(userptr_t));
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		if (result)
+		{
+			;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+			spinlock_release(&stackdef_lock);
+			;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+			return result;
+		}
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		result = copyoutstr(argv[i], argv_i_user, argv_i_size, &actual);
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		if (result)
+		{
+			;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+			spinlock_release(&stackdef_lock);
+			;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+			return result;
+		}
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		result = (argv_i_size != actual) ? 2 : result;
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+		if (result)
+		{
+			;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+			spinlock_release(&stackdef_lock);
+			;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+			return result;
+		}
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+	}
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
+	spinlock_release(&stackdef_lock);
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;membar_any_any();
 	return 0;
 }
 

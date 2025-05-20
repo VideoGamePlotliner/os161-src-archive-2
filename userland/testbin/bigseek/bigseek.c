@@ -35,6 +35,31 @@
 #include <err.h>
 #include <errno.h>
 
+
+
+
+
+
+
+/* Based on `kern/include/kern/fcntl.h` */
+#ifndef O_RDWR
+#define O_RDWR        2      /* Open for read and write */
+#endif /* O_RDWR */
+#ifndef O_CREAT
+#define O_CREAT       4      /* Create file if it doesn't exist */
+#endif /* O_CREAT */
+#ifndef O_TRUNC
+#define O_TRUNC      16      /* Truncate file upon open */
+#endif /* O_TRUNC */
+
+
+
+
+
+
+
+
+
 /*
  * Test for seek positions > 2^32.
  *
@@ -69,23 +94,59 @@ static const char *slogans[] = {
 
 static
 void
+bigseek_cleanup(int fd, const char *filename, int errno_value)
+{
+	int result = 0;
+
+	result = close(fd);
+	if (result == -1)
+	{
+		warn("%s: close() failed with fd %d", __func__, fd);
+	}
+
+	result = remove(filename);
+	if (result == -1)
+	{
+		warn("%s: remove() failed with filename \"%s\"", __func__, filename);
+	}
+
+	errno = errno_value; // ensure that errno is not determined by the other lines of code in this function
+}
+
+static
+void
 write_slogan(int fd, unsigned which, bool failok)
 {
+	if (which > 1)
+	{
+		bigseek_cleanup(fd, TESTFILE, EDOM);
+		errx(1, "%s: invalid 'which' value: %u", __func__, which);
+	}
+
 	size_t len;
 	ssize_t r;
 
+	int e = 0;
+
 	len = strlen(slogans[which]);
+
+	errno = 0;
 	r = write(fd, slogans[which], len);
+	e = errno;
+
 	if (r < 0) {
-		if (failok && errno == EFBIG) {
+		if (failok && (e == EFBIG)) {
 			return;
 		}
+		bigseek_cleanup(fd, TESTFILE, e);
 		err(1, "write");
 	}
 	if (failok) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		errx(1, "write: expected failure but wrote %zd bytes", r);
 	}
 	if ((size_t)r != len) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		errx(1, "write: result %zd bytes, expected %zu", r, len);
 	}
 }
@@ -94,22 +155,36 @@ static
 void
 check_slogan(int fd, unsigned which)
 {
+	if (which > 1)
+	{
+		bigseek_cleanup(fd, TESTFILE, EDOM);
+		errx(1, "%s: invalid 'which' value: %u", __func__, which);
+	}
+
 	char buf[256];
 	size_t len;
 	ssize_t r;
 	unsigned i, wrongcount;
 
+	int e = 0;
+
+	errno = 0;
 	r = read(fd, buf, sizeof(buf));
+	e = errno;
+
 	if (r < 0) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		err(1, "read");
 	}
 	if (r == 0) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		errx(1, "read: Unexpected EOF");
 	}
 
 	/* we should get either a full buffer or the length of the slogan */
 	len = strlen(slogans[which]);
 	if ((size_t)r != sizeof(buf) && (size_t)r != len) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		errx(1, "read: result %zd bytes, expected %zu or %zu",
 		     r, sizeof(buf), len);
 	}
@@ -119,6 +194,7 @@ check_slogan(int fd, unsigned which)
 		warnx("read: got wrong data");
 		warnx("expected: %s", slogans[which]);
 		buf[sizeof(buf) - 1] = 0;
+		bigseek_cleanup(fd, TESTFILE, e);
 		errx(1, "found: %s", buf);
 	}
 
@@ -132,6 +208,7 @@ check_slogan(int fd, unsigned which)
 		}
 	}
 	if (wrongcount > 0) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		errx(1, "%u bytes of trash in file", wrongcount);
 	}
 }
@@ -143,14 +220,21 @@ try_reading(int fd)
 	char buf[16];
 	ssize_t r;
 
+	int e = 0;
+
+	errno = 0;
 	r = read(fd, buf, sizeof(buf));
+	e = errno;
+
 	if (r == 0) {
 		/* expected EOF */
 		return;
 	}
 	if (r < 0) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		err(1, "read");
 	}
+	bigseek_cleanup(fd, TESTFILE, e);
 	errx(1, "read: Expected EOF but got %zd bytes", r);
 }
 
@@ -167,11 +251,18 @@ dolseek(int fd, off_t pos, int whence, const char *whencestr, off_t expected)
 {
 	off_t result;
 
+	int e = 0;
+
+	errno = 0;
 	result = lseek(fd, pos, whence);
+	e = errno;
+
 	if (result == -1) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		err(1, "lseek(fd, 0x%llx, %s)", pos, whencestr);
 	}
 	if (result != expected) {
+		bigseek_cleanup(fd, TESTFILE, e);
 		errx(1, "lseek(fd, 0x%llx, %s): Wrong return value"
 		     " (got 0x%llx, expected 0x%llx)", pos, whencestr,
 		     result, expected);

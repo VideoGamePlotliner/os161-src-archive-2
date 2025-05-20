@@ -13,7 +13,7 @@
 - https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions
 
 # Tips
-- To enable the "hangman" option (and thus the `HANGMAN_*()` macros), all you need to do is add the line `options hangman` to [kern/conf/conf.kern](kern/conf/conf.kern), right below `defoption hangman`.
+- To enable the "hangman" option (and thus the `HANGMAN_*()` macros) in [kern/conf/DUMBVM](kern/conf/DUMBVM), all you need to do is remove any leading #s from the line in [kern/conf/DUMBVM](kern/conf/DUMBVM) containing `options hangman`.
 
 # `man` page for each program that is executable with the `p` command in OS/161
 - man/bin/cat.html
@@ -45,6 +45,7 @@
 - man/testbin/bigseek.html
 - man/testbin/bloat.html
 - man/testbin/conman.html
+- man/testbin/conmanaltered.html
 - man/testbin/crash.html
 - man/testbin/ctest.html
 - man/testbin/dirconc.html
@@ -55,14 +56,14 @@
 - man/testbin/farm.html
 - man/testbin/faulter.html
 - man/testbin/filetest.html
+- man/testbin/filetestaltered.html
 - man/testbin/forkbomb.html
 - man/testbin/forktest.html
 - man/testbin/frack.html
-- man/testbin/guzzle.html
+- man/testbin/getpidtest.html
 - man/testbin/hash.html
 - man/testbin/hog.html
 - man/testbin/huge.html
-- man/testbin/kitchen.html
 - man/testbin/malloctest.html
 - man/testbin/matmult.html
 - man/testbin/multiexec.html
@@ -70,26 +71,20 @@
 - man/testbin/parallelvm.html
 - man/testbin/poisondisk.html
 - man/testbin/psort.html
-- man/testbin/quinthuge.html
-- man/testbin/quintmat.html
-- man/testbin/quintsort.html
 - man/testbin/randcall.html
 - man/testbin/redirect.html
 - man/testbin/rmdirtest.html
 - man/testbin/rmtest.html
 - man/testbin/sbrktest.html
 - man/testbin/schedpong.html
-- man/testbin/sink.html
 - man/testbin/sort.html
 - man/testbin/sparsefile.html
-- man/testbin/sty.html
 - man/testbin/tail.html
 - man/testbin/tictac.html
 - man/testbin/triplehuge.html
 - man/testbin/triplemat.html
 - man/testbin/triplesort.html
 - man/testbin/usemtest.html
-- man/testbin/userthreads.html
 - man/testbin/zero.html
 
 # Syscalls required for such programs, according to the `man` pages above
@@ -257,6 +252,12 @@ These syscalls are not those programs' *only* requirements, by the way.
   - man/syscall/write.html
   - man/syscall/_exit.html
 
+- man/testbin/chdirtest.html
+  - man/syscall/write.html
+  - man/syscall/_exit.html
+  - man/syscall/__getcwd.html
+  - man/syscall/chdir.html
+
 - man/testbin/conman.html
   - man/syscall/read.html
   - man/syscall/write.html
@@ -385,10 +386,6 @@ These syscalls are not those programs' *only* requirements, by the way.
   - man/syscall/write.html
   - man/syscall/_exit.html
 
-- man/testbin/guzzle.html
-  - man/syscall/write.html
-  - man/syscall/_exit.html
-
 - man/testbin/hash.html
   - man/syscall/open.html
   - man/syscall/read.html
@@ -402,13 +399,6 @@ These syscalls are not those programs' *only* requirements, by the way.
 - man/testbin/huge.html
   - man/syscall/write.html
   - man/syscall/_exit.html
-
-- man/testbin/kitchen.html
-  - man/syscall/fork.html
-  - man/syscall/execv.html
-  - man/syscall/write.html
-  - man/syscall/_exit.html
-  - man/syscall/read.html
 
 - man/testbin/malloctest.html
   - man/syscall/open.html
@@ -472,27 +462,6 @@ These syscalls are not those programs' *only* requirements, by the way.
   - man/syscall/waitpid.html
   - man/syscall/_exit.html
 
-- man/testbin/quinthuge.html
-  - man/syscall/fork.html
-  - man/syscall/execv.html
-  - man/syscall/waitpid.html
-  - man/syscall/write.html
-  - man/syscall/_exit.html
-
-- man/testbin/quintmat.html
-  - man/syscall/fork.html
-  - man/syscall/execv.html
-  - man/syscall/waitpid.html
-  - man/syscall/write.html
-  - man/syscall/_exit.html
-
-- man/testbin/quintsort.html
-  - man/syscall/fork.html
-  - man/syscall/execv.html
-  - man/syscall/waitpid.html
-  - man/syscall/write.html
-  - man/syscall/_exit.html
-
 - man/testbin/redirect.html
   - man/syscall/open.html
   - man/syscall/dup2.html
@@ -553,11 +522,6 @@ These syscalls are not those programs' *only* requirements, by the way.
   - man/syscall/remove.html
   - man/syscall/sbrk.html
 
-- man/testbin/sink.html
-  - man/syscall/read.html
-  - man/syscall/write.html
-  - man/syscall/_exit.html
-
 - man/testbin/sort.html
   - man/syscall/write.html
   - man/syscall/_exit.html
@@ -567,12 +531,6 @@ These syscalls are not those programs' *only* requirements, by the way.
   - man/syscall/lseek.html
   - man/syscall/write.html
   - man/syscall/close.html
-  - man/syscall/_exit.html
-
-- man/testbin/sty.html
-  - man/syscall/fork.html
-  - man/syscall/execv.html
-  - man/syscall/write.html
   - man/syscall/_exit.html
 
 - man/testbin/tail.html

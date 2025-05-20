@@ -27,6 +27,7 @@
  * SUCH DAMAGE.
  */
 
+void disk_cleanup(int errno_value);
 void opendisk(const char *path);
 
 uint32_t diskblocksize(void);

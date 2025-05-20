@@ -68,6 +68,9 @@
  *
  * It copies the program name because runprogram destroys the copy
  * it gets by passing it to vfs_open().
+ * 
+ * Beware calling `kprintf()` before copying `ptr`: doing so seems
+ * to change the value of `((char **)ptr)[0]`.
  */
 static
 void
@@ -79,18 +82,67 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	KASSERT(nargs >= 1);
 
-	if (nargs > 2) {
-		kprintf("Warning: argument passing from menu not supported\n");
-	}
-
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
 
+	bzero(progname, sizeof(progname));
 	strcpy(progname, args[0]);
+	progname[sizeof(progname) - 1] = 0;
 
-	result = runprogram(progname);
+
+
+
+	// Used in "Running program ... failed" message below
+	char pname[sizeof(progname)];
+	bzero(pname, sizeof(pname));
+	KASSERT(strlen(args[0]) < sizeof(pname));
+	strcpy(pname, args[0]);
+	pname[sizeof(pname) - 1] = 0;
+
+
+
+
+	const int argc = (int)nargs;
+	const size_t argv_size = nargs * sizeof(char *);
+	char **argv = kmalloc(argv_size);
+	result = argv ? 0 : ENOMEM;
 	if (result) {
-		kprintf("Running program %s failed: %s\n", args[0],
+		kprintf("Creating argv for program \"%s\" failed: %s\n", pname, strerror(result));
+		return;
+	}
+	bzero(argv, argv_size);
+
+
+
+
+	for (int i = 0; i < argc; i++)
+	{
+		argv[i] = kstrdup(args[i]);
+		result = argv[i] ? 0 : ENOMEM;
+		if (result) {
+			break;
+		}
+	}
+	if (result) {
+		if (argv) {
+			for (int i = 0; i < argc; i++)
+			{
+				if (argv[i]) {
+					kfree(argv[i]);
+				}
+			}
+			kfree(argv);
+		}
+		kprintf("Copying args to argv for program \"%s\" failed: %s\n", pname, strerror(result));
+		return;
+	}
+
+
+
+
+	result = runprogram(progname, argc, argv); // Destroys argv
+	if (result) {
+		kprintf("Running program \"%s\" failed: %s\n", pname,
 			strerror(result));
 		return;
 	}

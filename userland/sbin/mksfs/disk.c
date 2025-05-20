@@ -50,6 +50,25 @@
 static int fd=-1;
 static uint32_t nblocks;
 
+// Based on `bigseek_cleanup()`.
+void
+disk_cleanup(int errno_value)
+{
+	int result = 0;
+
+	if (fd != -1)
+	{
+		result = close(fd);
+		if (result == -1)
+		{
+			warn("%s: close() failed with fd %d", __func__, fd);
+		}
+	}
+	fd = -1;
+
+	errno = errno_value; // ensure that errno is not determined by the other lines of code in this function
+}
+
 /*
  * Open a disk. If we're built for the host OS, check that it's a
  * System/161 disk image, and then ignore the header block.
@@ -65,6 +84,7 @@ opendisk(const char *path)
 		err(1, "%s", path);
 	}
 	if (fstat(fd, &statbuf)) {
+		disk_cleanup(errno);
 		err(1, "%s: fstat", path);
 	}
 
@@ -88,6 +108,7 @@ opendisk(const char *path)
 		buf[strlen(HOSTSTRING)] = 0;
 
 		if (strcmp(buf, HOSTSTRING)) {
+			disk_cleanup(errno);
 			errx(1, "%s: Not a System/161 disk image", path);
 		}
 	}
@@ -132,6 +153,7 @@ diskwrite(const void *data, uint32_t block)
 #endif
 
 	if (lseek(fd, block*BLOCKSIZE, SEEK_SET)<0) {
+		disk_cleanup(errno);
 		err(1, "lseek");
 	}
 
@@ -141,9 +163,11 @@ diskwrite(const void *data, uint32_t block)
 			if (errno==EINTR || errno==EAGAIN) {
 				continue;
 			}
+			disk_cleanup(errno);
 			err(1, "write");
 		}
 		if (len==0) {
+			disk_cleanup(errno);
 			err(1, "write returned 0?");
 		}
 		tot += len;
@@ -168,6 +192,7 @@ diskread(void *data, uint32_t block)
 #endif
 
 	if (lseek(fd, block*BLOCKSIZE, SEEK_SET)<0) {
+		disk_cleanup(errno);
 		err(1, "lseek");
 	}
 
@@ -177,9 +202,11 @@ diskread(void *data, uint32_t block)
 			if (errno==EINTR || errno==EAGAIN) {
 				continue;
 			}
+			disk_cleanup(errno);
 			err(1, "read");
 		}
 		if (len==0) {
+			disk_cleanup(errno);
 			err(1, "unexpected EOF in mid-sector");
 		}
 		tot += len;
