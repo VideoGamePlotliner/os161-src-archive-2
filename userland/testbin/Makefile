@@ -5,7 +5,7 @@
 TOP=../..
 .include "$(TOP)/mk/os161.config.mk"
 
-SUBDIRS=add argtest badcall bigexec bigfile bigfork bigseek bloat conman conmanaltered \
+SUBDIRS=add argtest badcall bigexec bigfile bigfork bigseek bloat chdirtest conman conmanaltered \
 	crash ctest dirconc dirseek dirtest f_test factorial farm faulter \
 	filetest filetestaltered forkbomb forktest frack getpidtest hash hog huge \
 	malloctest matmult multiexec palin parallelvm poisondisk psort \

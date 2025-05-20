@@ -78,6 +78,7 @@ struct uio {
 	enum uio_seg      uio_segflg;	/* What kind of pointer we have */
 	enum uio_rw       uio_rw;	/* Whether op is a read or write */
 	struct addrspace *uio_space;	/* Address space for user pointer */
+	bool uio_emuprint_during_read; /* Whether or not to use EMUPRINT during VOP_READ */
 };
 
 

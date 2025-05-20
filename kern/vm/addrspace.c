@@ -166,13 +166,16 @@ as_complete_load(struct addrspace *as)
 }
 
 int
-as_define_stack(struct addrspace *as, vaddr_t *stackptr)
+as_define_stack(struct addrspace *as, vaddr_t *stackptr, userptr_t *argv_user, int argc, char **argv)
 {
 	/*
 	 * Write this.
 	 */
 
 	(void)as;
+	(void)argv_user;
+	(void)argc;
+	(void)argv;
 
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;

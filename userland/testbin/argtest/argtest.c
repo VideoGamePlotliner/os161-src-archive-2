@@ -45,7 +45,7 @@ main(int argc, char *argv[])
 
 	printf("argc: %d\n", argc);
 
-	for (i=0; i<=argc; i++) {
+	for (i=0; i<argc; i++) {
 		tmp = argv[i];
 		if (tmp==NULL) {
 			tmp = "[NULL]";

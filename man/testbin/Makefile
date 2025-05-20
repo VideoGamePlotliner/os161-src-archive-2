@@ -5,7 +5,7 @@ TOP=../..
 
 MANDIR=/man/testbin
 MANFILES=\
-	add.html argtest.html badcall.html bigfile.html conman.html conmanaltered.html \
+	add.html argtest.html badcall.html bigfile.html chdirtest.html conman.html conmanaltered.html \
 	crash.html ctest.html dirseek.html dirtest.html f_test.html \
 	farm.html faulter.html filetest.html filetestaltered.html forkbomb.html forktest.html \
 	getpidtest.html guzzle.html hash.html hog.html huge.html index.html kitchen.html \

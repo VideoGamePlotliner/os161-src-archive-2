@@ -37,6 +37,7 @@
 #include <assert.h>
 #include <limits.h>
 #include <err.h>
+#include <errno.h>
 
 #include "support.h"
 #include "kern/sfs.h"
@@ -140,6 +141,7 @@ readsb(void)
 
 	diskread(&sb, SFS_SUPER_BLOCK);
 	if (SWAP32(sb.sb_magic) != SFS_MAGIC) {
+		disk_cleanup(errno);
 		errx(1, "Not an sfs filesystem");
 	}
 	return SWAP32(sb.sb_nblocks);
@@ -514,6 +516,7 @@ usage(void)
 	warnx("   -d: dump directory contents");
 	warnx("   -r: recurse into directory contents");
 	warnx("   -a: equivalent to -sbdfr -i 1");
+	disk_cleanup(errno);
 	errx(1, "   Default is -i 1");
 }
 

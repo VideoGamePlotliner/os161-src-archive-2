@@ -45,14 +45,30 @@
 #include <syscall.h>
 #include <test.h>
 
+static
+void
+destroy_argv___runprogram(int argc, char **argv)
+{
+	if (argv) {
+		for (int i = 0; i < argc; i++) {
+			if (argv[i]) {
+				kfree(argv[i]);
+			}
+		}
+		kfree(argv);
+	}
+}
+
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
  *
  * Calls vfs_open on progname and thus may destroy it.
+ * 
+ * Destroys argv.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, int argc, char **argv)
 {
 	struct addrspace *as;
 	struct vnode *v;
@@ -62,6 +78,7 @@ runprogram(char *progname)
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
 	if (result) {
+		destroy_argv___runprogram(argc, argv);
 		return result;
 	}
 
@@ -72,6 +89,7 @@ runprogram(char *progname)
 	as = as_create();
 	if (as == NULL) {
 		vfs_close(v);
+		destroy_argv___runprogram(argc, argv);
 		return ENOMEM;
 	}
 
@@ -84,21 +102,28 @@ runprogram(char *progname)
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
+		destroy_argv___runprogram(argc, argv);
 		return result;
 	}
 
 	/* Done with the file now. */
 	vfs_close(v);
 
+	userptr_t argv_user; /* userspace addr of argv */
+
 	/* Define the user stack in the address space */
-	result = as_define_stack(as, &stackptr);
+	result = as_define_stack(as, &stackptr, &argv_user, argc, argv);
+
+	/* Done with argv now. */
+	destroy_argv___runprogram(argc, argv);
+
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
 
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(argc, argv_user,
 			  NULL /*userspace addr of environment*/,
 			  stackptr, entrypoint);
 

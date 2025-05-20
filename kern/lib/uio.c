@@ -161,4 +161,5 @@ uio_kinit(struct iovec *iov, struct uio *u,
 	u->uio_segflg = UIO_SYSSPACE;
 	u->uio_rw = rw;
 	u->uio_space = NULL;
+	u->uio_emuprint_during_read = true;
 }

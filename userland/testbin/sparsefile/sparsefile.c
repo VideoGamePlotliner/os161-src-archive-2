@@ -41,6 +41,23 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <err.h>
+#include <errno.h>
+
+// Based on `bigseek_cleanup()`.
+static
+void
+sparsefile_cleanup(int fd, int errno_value)
+{
+	int result = 0;
+
+	result = close(fd);
+	if (result == -1)
+	{
+		warn("%s: close() failed with fd %d", __func__, fd);
+	}
+
+	errno = errno_value; // ensure that errno is not determined by the other lines of code in this function
+}
 
 int
 main(int argc, char *argv[])
@@ -52,6 +69,7 @@ main(int argc, char *argv[])
 	char byte;
 
 	if (argc != 3) {
+		errno = EINVAL;
 		errx(1, "Usage: sparsefile <filename> <size>");
 	}
 
@@ -60,6 +78,7 @@ main(int argc, char *argv[])
 	byte = '\n';
 
 	if (size == 0) {
+		errno = EINVAL;
 		err(1, "Sparse files of length zero are not meaningful");
 	}
 
@@ -71,13 +90,16 @@ main(int argc, char *argv[])
 	}
 
 	if (lseek(fd, size-1, SEEK_SET) == -1) {
+		sparsefile_cleanup(fd, errno);
 		err(1, "%s: lseek", filename);
 	}
 	r = write(fd, &byte, 1);
 	if (r < 0) {
+		sparsefile_cleanup(fd, errno);
 		err(1, "%s: write", filename);
 	}
 	else if (r != 1) {
+		sparsefile_cleanup(fd, errno);
 		errx(1, "%s: write: Unexpected result count %d", filename, r);
 	}
 

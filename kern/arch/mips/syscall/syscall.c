@@ -43,7 +43,9 @@
 #include <synch.h>
 #include <vnode.h>
 #include <kern/unistd.h>
+#include <kern/seek.h>
 #include <proc.h>
+#include <stat.h>
 
 /* Copied from `kern/include/limits.h` */
 #include <kern/limits.h>
@@ -55,6 +57,7 @@
 typedef struct __userptr *userptr_t;
 typedef const struct __userptr *const_userptr_t;
 typedef __i32 int32_t;
+typedef __i64 int64_t;
 typedef _Bool bool;
 
 
@@ -123,14 +126,21 @@ static int sys_read_in(userptr_t userbuf, size_t userbuflen, int32_t *retval);
 static int sys_read_fdnode(int fd, userptr_t userbuf, size_t userbuflen, int32_t *retval);
 static int sys_getpid(int32_t *retval);
 __DEAD static void sys__exit(int exitcode);
+static int sys_lseek(int fd, off_t pos, userptr_t userwhence, int32_t *retval, int32_t *retval_v1);
+static int sys_fstat(int fd, userptr_t userstatbuf);
 
 
 
 
 struct fdnode {
-	int fd;
-	struct vnode *v;
-	struct fdnode *next;
+	int fdn_fd;
+	struct vnode *fdn_v;
+	struct fdnode *fdn_next;
+	off_t fdn_start;			  /* Place in file. Based on `l_start` in `struct flock`.
+								   * Must be nonnegative if `fdn_whence` is `SEEK_SET`.
+								   */
+	int fdn_whence;				  /* SEEK_SET, SEEK_CUR, or SEEK_END. Based on `l_whence` in `struct flock`. */
+	struct lock *fdn_curpos_lock; /* The lock for `fdn_pos` and `fdn_whence`. */
 };
 
 static struct fdnode *first_fdnode = NULL;
@@ -165,8 +175,8 @@ fd_is_being_used(int fd_in_question)
 	}
 
 	KASSERT(lock_do_i_hold(fdnode_lock));
-	for (struct fdnode *fdn = first_fdnode; fdn != NULL; fdn = fdn->next) {
-		if (fdn->fd == fd_in_question) {
+	for (struct fdnode *fdn = first_fdnode; fdn != NULL; fdn = fdn->fdn_next) {
+		if (fdn->fdn_fd == fd_in_question) {
 			return true;
 		}
 	}
@@ -184,9 +194,9 @@ fd_lookup(struct vnode **vn, int fd_in_question)
 
 	KASSERT(lock_do_i_hold(fdnode_lock));
 	KASSERT(vn != NULL);
-	for (struct fdnode *fdn = first_fdnode; fdn != NULL; fdn = fdn->next) {
-		if (fdn->fd == fd_in_question) {
-			*vn = fdn->v;
+	for (struct fdnode *fdn = first_fdnode; fdn != NULL; fdn = fdn->fdn_next) {
+		if (fdn->fdn_fd == fd_in_question) {
+			*vn = fdn->fdn_v;
 			return 0;
 		}
 	}
@@ -209,12 +219,15 @@ fd_allocate(struct vnode *v, int *fd)
 		return ENOMEM;
 	}
 
-	new_first_fdnode->fd = 0;
-	new_first_fdnode->v = NULL;
-	new_first_fdnode->next = NULL;
+	new_first_fdnode->fdn_fd = 0;
+	new_first_fdnode->fdn_v = NULL;
+	new_first_fdnode->fdn_next = NULL;
 
 	int available_fd = FD_MIN;
 	bool fd_is_available = false;
+	new_first_fdnode->fdn_start = 0;
+	new_first_fdnode->fdn_curpos_lock = NULL;
+	new_first_fdnode->fdn_whence = 0;
 
 	lock_acquire(fdnode_lock);
 	for (int i = FD_MIN; i <= FD_MAX; i++) {
@@ -231,11 +244,21 @@ fd_allocate(struct vnode *v, int *fd)
 		return ENFILE;
 	}
 
-	new_first_fdnode->fd = available_fd;
-	new_first_fdnode->v = v;
-	new_first_fdnode->next = first_fdnode;
+	struct lock *curpos_lock = lock_create("fdn_curpos_lock");
+	if (curpos_lock == NULL) {
+		lock_release(fdnode_lock);
+		kfree(new_first_fdnode);
+		return ENOMEM;
+	}
+
+	new_first_fdnode->fdn_fd = available_fd;
+	new_first_fdnode->fdn_v = v;
+	new_first_fdnode->fdn_next = first_fdnode;
 
 	first_fdnode = new_first_fdnode;
+	new_first_fdnode->fdn_start = 0;
+	new_first_fdnode->fdn_whence = SEEK_CUR;
+	new_first_fdnode->fdn_curpos_lock = curpos_lock;
 	lock_release(fdnode_lock);
 
 	*fd = available_fd;
@@ -262,18 +285,18 @@ fd_deallocate(struct vnode **v, int fd)
 	if (first_fdnode == NULL) {
 		// No open files
 	}
-	else if (first_fdnode->fd == fd) {
+	else if (first_fdnode->fdn_fd == fd) {
 		fdnode_removed = first_fdnode;
-		vnode_removed = fdnode_removed->v;
-		first_fdnode = fdnode_removed->next;
+		vnode_removed = fdnode_removed->fdn_v;
+		first_fdnode = fdnode_removed->fdn_next;
 		fd_found = true;
 	}
 	else {
-		for (struct fdnode *fdn = first_fdnode; fdn->next != NULL; fdn = fdn->next) {
-			if (fdn->next->fd == fd) {
-				fdnode_removed = fdn->next;
-				vnode_removed = fdnode_removed->v;
-				fdn->next = fdnode_removed->next;
+		for (struct fdnode *fdn = first_fdnode; fdn->fdn_next != NULL; fdn = fdn->fdn_next) {
+			if (fdn->fdn_next->fdn_fd == fd) {
+				fdnode_removed = fdn->fdn_next;
+				vnode_removed = fdnode_removed->fdn_v;
+				fdn->fdn_next = fdnode_removed->fdn_next;
 				fd_found = true;
 				break;
 			}
@@ -285,10 +308,114 @@ fd_deallocate(struct vnode **v, int fd)
 		return EBADF;
 	}
 
+	lock_destroy(fdnode_removed->fdn_curpos_lock);
 	kfree(fdnode_removed);
 
 	*v = vnode_removed;
 
+	return 0;
+}
+
+// `sys_lseek()` should call this function.
+// This function returns pointer to corresponding fdnode for success or NULL for failure.
+static
+struct fdnode *
+fd_acquire_curpos_lock(int fd)
+{
+	if (fd == STDIN_FILENO) {
+		return NULL;
+	}
+	if (fd == STDOUT_FILENO) {
+		return NULL;
+	}
+	if (fd == STDERR_FILENO) {
+		return NULL;
+	}
+	if (fd < FD_MIN || fd > FD_MAX) {
+		return NULL;
+	}
+
+	KASSERT(lock_do_i_hold(fdnode_lock));
+	for (struct fdnode *fdn = first_fdnode; fdn != NULL; fdn = fdn->fdn_next) {
+		if (fdn->fdn_fd == fd) {
+			lock_acquire(fdn->fdn_curpos_lock);
+			return fdn;
+		}
+	}
+	return NULL;
+}
+
+// `sys_lseek()` should call this function.
+static
+void
+fd_release_curpos_lock(struct fdnode *fdn)
+{
+	KASSERT(fdn != NULL);
+	KASSERT(lock_do_i_hold(fdnode_lock));
+	KASSERT(lock_do_i_hold(fdn->fdn_curpos_lock));
+	lock_release(fdn->fdn_curpos_lock);
+}
+
+// `sys_lseek()` should call this function.
+// This function returns 0 for success or an error number for failure.
+static
+int
+fd_seek(off_t pos, int whence, off_t *newpos, struct fdnode *fdn)
+{
+	KASSERT(pos >= 0 || whence != SEEK_SET);
+	KASSERT(whence == SEEK_SET || whence == SEEK_CUR || whence == SEEK_END);
+	KASSERT(newpos != NULL);
+	KASSERT(fdn != NULL);
+	KASSERT(lock_do_i_hold(fdnode_lock));
+	KASSERT(lock_do_i_hold(fdn->fdn_curpos_lock));
+
+	switch (whence)
+	{
+	case SEEK_SET:
+		fdn->fdn_start = pos;
+		break;
+	case SEEK_CUR:
+		if (fdn->fdn_start + pos < 0)
+		{
+			return EINVAL;
+		}
+		fdn->fdn_start += pos;
+		break;
+	case SEEK_END:
+		{
+			off_t eof = 0;
+			size_t oldresid;
+			size_t newresid;
+
+			do
+			{
+				struct uio ku;
+				struct iovec iov;
+				char buf[1];
+				uio_kinit(&iov, &ku, buf, sizeof(buf), eof, UIO_READ);
+				ku.uio_emuprint_during_read = false;
+				oldresid = ku.uio_resid;
+				int result = VOP_READ(fdn->fdn_v, &ku);
+				if (result)
+				{
+					return result;
+				}
+				eof = ku.uio_offset;
+				newresid = ku.uio_resid;
+			} while (oldresid != newresid);
+
+			if (eof + pos < 0)
+			{
+				return EINVAL;
+			}
+			fdn->fdn_start = eof + pos;
+		}
+		break;
+	default:
+		return EINVAL; // return 2;
+	}
+	fdn->fdn_whence = whence;
+	*newpos = fdn->fdn_start;
 	return 0;
 }
 
@@ -311,6 +438,8 @@ find_console_vnode(struct vnode **vn)
 
 
 
+static int sys___getcwd(userptr_t userbuf, size_t userbuflen, int *retval);
+static int sys_chdir(const_userptr_t usrpathname);
 
 /*
  * System call dispatcher.
@@ -355,6 +484,7 @@ syscall(struct trapframe *tf)
 {
 	int callno;
 	int32_t retval;
+	int32_t retval_v1;
 	int err;
 
 	KASSERT(curthread != NULL);
@@ -373,6 +503,7 @@ syscall(struct trapframe *tf)
 	 */
 
 	retval = 0;
+	retval_v1 = 0;
 
 	switch (callno) {
 	    case SYS_reboot:
@@ -405,6 +536,18 @@ syscall(struct trapframe *tf)
 		break;
 		case SYS__exit:
 		sys__exit((int)tf->tf_a0);
+		case SYS_chdir:
+		err = sys_chdir((const_userptr_t)tf->tf_a0);
+		break;
+		case SYS_lseek:
+		err = sys_lseek((int)tf->tf_a0,
+                        (((int64_t)tf->tf_a2) << 32) + ((int64_t)tf->tf_a3),
+                        (userptr_t)(tf->tf_sp + 16),
+                        &retval,
+                        &retval_v1);
+		break;
+		case SYS_fstat:
+		err = sys_fstat((int)tf->tf_a0, (userptr_t)tf->tf_a1);
 		break;
 
 	    default:
@@ -422,6 +565,12 @@ syscall(struct trapframe *tf)
 		 */
 		tf->tf_v0 = err;
 		tf->tf_a3 = 1;      /* signal an error */
+	}
+	else if (callno == SYS_lseek) {
+		/* Success. */
+		tf->tf_v0 = retval;
+		tf->tf_v1 = retval_v1;
+		tf->tf_a3 = 0;      /* signal no error */
 	}
 	else {
 		/* Success. */
@@ -736,20 +885,44 @@ sys_write_fdnode(int fd, const_userptr_t userbuf, size_t userbuflen, int32_t *re
 		return result;
 	}
 
-	uio_kinit(&iov, &ku, kernbuf, userbuflen, 0, UIO_WRITE);
+	struct fdnode *fdn = fd_acquire_curpos_lock(fd);
+	if (fdn == NULL) {
+		// Could not find fdnode with the given fd
+		lock_release(fdnode_lock);
+		kfree(kernbuf);
+		return EBADF;
+	}
+
+	uio_kinit(&iov, &ku, kernbuf, userbuflen, fdn->fdn_start, UIO_WRITE);
+
+	const off_t old_offset = ku.uio_offset;
+
 	result = VOP_WRITE(vn, &ku);
 	if (result) {
+		fd_release_curpos_lock(fdn);
 		lock_release(fdnode_lock);
 		kfree(kernbuf);
 		return result;
 	}
+
+	const off_t new_offset = ku.uio_offset;
 
 	if (ku.uio_resid > 0) {
 		// kprintf("Short write: %lu bytes left over\n",
 		// 	(unsigned long) ku.uio_resid);
 	}
 
-	numbyteswritten = (size_t)ku.uio_offset;
+	off_t newpos;
+	result = fd_seek(new_offset, SEEK_SET, &newpos, fdn);
+	if (result) {
+		fd_release_curpos_lock(fdn);
+		lock_release(fdnode_lock);
+		kfree(kernbuf);
+		return result;
+	}
+
+	KASSERT(new_offset >= old_offset);
+	numbyteswritten = (size_t)(new_offset - old_offset);
 
 	if (numbyteswritten != userbuflen) {
 		// kprintf("%lu bytes written, should have been %lu!\n",
@@ -757,6 +930,7 @@ sys_write_fdnode(int fd, const_userptr_t userbuf, size_t userbuflen, int32_t *re
 		// 	(unsigned long) userbuflen);
 	}
 
+	fd_release_curpos_lock(fdn);
 	lock_release(fdnode_lock);
 	kfree(kernbuf);
 
@@ -892,21 +1066,44 @@ sys_read_fdnode(int fd, userptr_t userbuf, size_t userbuflen, int32_t *retval)
 		return result;
 	}
 
-	uio_kinit(&iov, &ku, kernbuf, userbuflen, 0, UIO_READ);
+	struct fdnode *fdn = fd_acquire_curpos_lock(fd);
+	if (fdn == NULL) {
+		// Could not find fdnode with the given fd
+		lock_release(fdnode_lock);
+		kfree(kernbuf);
+		return EBADF;
+	}
+
+	uio_kinit(&iov, &ku, kernbuf, userbuflen, fdn->fdn_start, UIO_READ);
+
+	const off_t old_offset = ku.uio_offset;
 
 	result = VOP_READ(vn, &ku);
 	if (result) {
+		fd_release_curpos_lock(fdn);
 		lock_release(fdnode_lock);
 		kfree(kernbuf);
 		return result;
 	}
+
+	const off_t new_offset = ku.uio_offset;
 
 	if (ku.uio_resid > 0) {
 		// kprintf("Short read: %lu bytes left over\n",
 		// 	(unsigned long) ku.uio_resid);
 	}
 
-	numbytesread = (size_t)ku.uio_offset;
+	off_t newpos;
+	result = fd_seek(new_offset, SEEK_SET, &newpos, fdn);
+	if (result) {
+		fd_release_curpos_lock(fdn);
+		lock_release(fdnode_lock);
+		kfree(kernbuf);
+		return result;
+	}
+
+	KASSERT(new_offset >= old_offset);
+	numbytesread = (size_t)(new_offset - old_offset);
 
 	if (numbytesread != userbuflen) {
 		// kprintf("%lu bytes read, should have been %lu!\n",
@@ -914,7 +1111,16 @@ sys_read_fdnode(int fd, userptr_t userbuf, size_t userbuflen, int32_t *retval)
 		// 	(unsigned long) userbuflen);
 	}
 
+	fd_release_curpos_lock(fdn);
 	lock_release(fdnode_lock);
+
+	if (numbytesread == 0) {
+		// This means we have an EOF, because `man/syscall/read.html` says,
+		// "A return value of 0 should be construed as signifying end-of-file."
+		kfree(kernbuf);
+		*retval = (int32_t)0;
+		return 0;
+	}
 
 	result = copyout((const void *)kernbuf, userbuf, numbytesread);
 	if (result) {
@@ -966,4 +1172,219 @@ sys__exit(int exitcode)
 	// (2) is labeled __DEAD
 	// (3) is intended for exiting, not entering
 	thread_exit();
+}
+
+// This function is only to be called from `syscall()`.
+// Copy `userwhence` via `int kernwhence; result = copyin(userwhence, &kernwhence, sizeof(kernwhence));`.
+// This function returns 0 for success or an error number for failure.
+static
+int
+sys_lseek(
+	int fd /* corresponds to `(int)tf->tf_a0` */,
+	off_t pos /* corresponds to `(((int64_t)tf->tf_a2) << 32) + ((int64_t)tf->tf_a3)` */,
+	userptr_t userwhence /* corresponds to `(userptr_t)(tf->tf_sp + 16)` */,
+	int32_t *retval /* corresponds to `(int32_t *)tf->tf_v0` */,
+	int32_t *retval_v1 /* (corresponds to `(int32_t *)tf->tf_v1` */)
+{
+	if (fd == STDIN_FILENO) {
+		return ESPIPE;
+	}
+	if (fd == STDOUT_FILENO) {
+		return ESPIPE;
+	}
+	if (fd == STDERR_FILENO) {
+		return ESPIPE;
+	}
+	if (fd < FD_MIN || fd > FD_MAX) {
+		return EBADF;
+	}
+
+	struct vnode *vn;
+	int result = 0;
+	off_t newpos;
+
+	fdnode_ensure_lock_not_null();
+
+	lock_acquire(fdnode_lock);
+
+	result = fd_lookup(&vn, fd);
+	if (result) {
+		lock_release(fdnode_lock);
+		return result;
+	}
+
+	KASSERT(vn != NULL);
+
+	if (!VOP_ISSEEKABLE(vn)) {
+		lock_release(fdnode_lock);
+		return ESPIPE;
+	}
+
+	int kernwhence;
+	result = copyin(userwhence, &kernwhence, sizeof(kernwhence));
+	if (result)
+	{
+		lock_release(fdnode_lock);
+		return result;
+	}
+
+	if (pos < 0 && kernwhence == SEEK_SET) {
+		lock_release(fdnode_lock);
+		return EINVAL;
+	}
+
+	if (kernwhence != SEEK_SET && kernwhence != SEEK_CUR && kernwhence != SEEK_END) {
+		lock_release(fdnode_lock);
+		return EINVAL;
+	}
+
+	struct fdnode *fdn = fd_acquire_curpos_lock(fd);
+	if (fdn == NULL) {
+		// Could not find fdnode with the given fd
+		lock_release(fdnode_lock);
+		return EBADF;
+	}
+
+	result = fd_seek(pos, kernwhence, &newpos, fdn);
+	if (result)
+	{
+		fd_release_curpos_lock(fdn);
+		lock_release(fdnode_lock);
+		return result;
+	}
+
+	fd_release_curpos_lock(fdn);
+	lock_release(fdnode_lock);
+
+	int64_t v0 = newpos;
+	int64_t v1 = newpos;
+	v0 >>= 32;
+	v1 >>= 0;
+	v0 &= (int64_t)0xFFFFFFFF;
+	v1 &= (int64_t)0xFFFFFFFF;
+
+	*retval = v0;
+	*retval_v1 = v1;
+	return 0;
+}
+
+// This function is only to be called from `sys_fstat()`.
+// Use this function in `sys_fstat()` when `fd` equals `STDIN_FILENO`, `STDOUT_FILENO`, or `STDERR_FILENO`.
+// `userstatbuf` represents a `struct stat *` passed from user space.
+// This function returns 0 for success or an error number for failure.
+static
+int
+sys_fstat_console(userptr_t userstatbuf)
+{
+	struct vnode *vn;
+	int result = 0;
+
+	char path[5];
+	bzero(path, sizeof(path));
+	strcpy(path, "con:");
+	path[sizeof(path) - 1] = 0;
+
+	result = vfs_lookup(path, &vn);
+	if (result) {
+		return result;
+	}
+
+	struct stat kernstatbuf;
+	bzero(&kernstatbuf, sizeof(kernstatbuf));
+
+	result = VOP_STAT(vn, &kernstatbuf);
+	if (result) {
+		return result;
+	}
+
+	result = copyout(&kernstatbuf, userstatbuf, sizeof(kernstatbuf));
+	if (result) {
+		return result;
+	}
+
+	return 0;
+}
+
+// This function is only to be called from `syscall()`.
+// `userstatbuf` represents a `struct stat *` passed from user space.
+// This function returns 0 for success or an error number for failure.
+static
+int
+sys_fstat(int fd, userptr_t userstatbuf)
+{
+	switch (fd)
+	{
+	case STDIN_FILENO:
+	case STDOUT_FILENO:
+	case STDERR_FILENO:
+		return sys_fstat_console(userstatbuf);
+	default:
+		break;
+	}
+
+	if (fd < FD_MIN || fd > FD_MAX) {
+		return EBADF;
+	}
+
+	struct vnode *vn;
+	int result = 0;
+
+	lock_acquire(fdnode_lock);
+	result = fd_lookup(&vn, fd);
+	if (result) {
+		lock_release(fdnode_lock);
+		return result;
+	}
+
+	struct stat kernstatbuf;
+	bzero(&kernstatbuf, sizeof(kernstatbuf));
+
+	result = VOP_STAT(vn, &kernstatbuf);
+	if (result) {
+		lock_release(fdnode_lock);
+		return result;
+	}
+
+	lock_release(fdnode_lock);
+
+	result = copyout(&kernstatbuf, userstatbuf, sizeof(kernstatbuf));
+	if (result) {
+		return result;
+	}
+
+	return 0;
+}
+
+// This function is only to be called from `syscall()`.
+// `usrpathname` represents a `const char *` passed from user space.
+// This function returns 0 for success or an error number for failure.
+static
+int
+sys_chdir(const_userptr_t usrpathname)
+{
+	// Implementation based on `cmd_pwd()` and `cmd_chdir()`
+
+	char kernpathname[PATH_MAX + 1];
+	int result;
+	size_t got;
+
+	bzero(kernpathname, sizeof(kernpathname));
+
+	result = copyinstr(usrpathname, kernpathname, sizeof(kernpathname), &got);
+	if (result) {
+		return result;
+	}
+
+	/* null terminate */
+	kernpathname[sizeof(kernpathname) - 1] = 0;
+	if (got < sizeof(kernpathname)) {
+		kernpathname[got] = 0;
+	}
+
+	result = vfs_chdir(kernpathname);
+	if (result) {
+		return result;
+	}
+
+	return 0;
 }

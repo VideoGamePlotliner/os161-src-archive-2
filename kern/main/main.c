@@ -152,6 +152,12 @@ shutdown(void)
 
 	vfs_clearbootfs();
 	vfs_clearcurdir();
+
+	// vfs_bootstrap() is called before vm_bootstrap(), which is called before vfs_setbootfs()
+	// Hence,
+	// vfs_unmountall() is called after vm_shutdown(), which is called after vfs_clearbootfs()
+	vm_shutdown();
+
 	vfs_unmountall();
 
 	thread_shutdown();

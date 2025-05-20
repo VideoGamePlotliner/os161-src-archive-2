@@ -207,6 +207,31 @@ kprintf_EMUPRINT_vnode_openflags(const char *funcname, int result, const struct 
 }
 
 /*
+ * Based on `kprintf_EMUPRINT_vnode_d()`.
+ * This function's name ends with "_d" because "%d" in `kprintf()` means `int`.
+ */
+static
+void
+kprintf_EMUPRINT_d(const char *funcname, int result)
+{
+#if OPT_EMUPRINT
+	const char *s = strerror(result);
+	kprintf("\n"
+			"<<<<<<<<\n"
+			"      || emuprint: %s() returned %d, which means %s%s%s\n"
+			"      >>>>>>>>\n",
+			funcname,
+			result,
+			s ? "\"" : "",
+			s ? s : "NULL",
+			s ? "\"" : "");
+#else
+	(void)funcname;
+	(void)result;
+#endif /* OPT_EMUPRINT */
+}
+
+/*
  * This function's name ends with "_d" because "%d" in `kprintf()` means `int`.
  * If `v` is of the type `struct vnode *`, call this function like this: `kprintf_EMUPRINT_vnode_d(__func__, result, v);`.
  */
@@ -1301,7 +1326,7 @@ emufs_reclaim(struct vnode *v)
 
 	kfree(ev);
 	result = 0;
-	kprintf_EMUPRINT_vnode_d(__func__, result, v);
+	kprintf_EMUPRINT_d(__func__, result);
 	return result;
 }
 
@@ -1329,7 +1354,9 @@ emufs_read(struct vnode *v, struct uio *uio)
 
 		result = emu_read(ev->ev_emu, ev->ev_handle, amt, uio);
 		if (result) {
-			kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+			if (uio->uio_emuprint_during_read) {
+				kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+			}
 			return result;
 		}
 
@@ -1340,7 +1367,9 @@ emufs_read(struct vnode *v, struct uio *uio)
 	}
 
 	result = 0;
-	kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	if (uio->uio_emuprint_during_read) {
+		kprintf_EMUPRINT_vnode_uio(__func__, result, v, uio);
+	}
 	return result;
 }
 
@@ -2240,6 +2269,92 @@ config_emu(struct emu_softc *sc, int emuno)
 
 #if OPT_EMUPRINT
 
+/*
+ * Based on `vnode_check()`.
+ */
+static
+void
+vnode_check_EMUPRINT(const struct vnode *v)
+{
+	if (v == NULL) {
+		panic("%s: null vnode\n", __func__);
+	}
+	if (v == (void *)0xdeadbeef) {
+		panic("%s: deadbeef vnode\n", __func__);
+	}
+	if (v->vn_ops == NULL) {
+		panic("%s: null ops pointer\n", __func__);
+	}
+	if (v->vn_ops == (void *)0xdeadbeef) {
+		panic("%s: deadbeef ops pointer\n", __func__);
+	}
+	if (v->vn_ops->vop_magic != VOP_MAGIC) {
+		panic("%s: ops with bad magic number %lx\n", __func__, v->vn_ops->vop_magic);
+	}
+	if (v->vn_fs == (void *)0xdeadbeef) {
+		panic("%s: deadbeef fs pointer\n", __func__);
+	}
+}
+
+/*
+ * Based on `vnode_check()`.
+ */
+static
+void
+fs_check_EMUPRINT(const struct fs *fs)
+{
+	if (fs == NULL) {
+		panic("%s: null fs\n", __func__);
+	}
+	if (fs == (void *)0xdeadbeef) {
+		panic("%s: deadbeef fs\n", __func__);
+	}
+	if (fs->fs_ops == NULL) {
+		panic("%s: null fs ops pointer\n", __func__);
+	}
+	if (fs->fs_ops == (void *)0xdeadbeef) {
+		panic("%s: deadbeef fs ops pointer\n", __func__);
+	}
+	if (fs->fs_data == NULL) {
+		panic("%s: null fs data pointer\n", __func__);
+	}
+	if (fs->fs_data == (void *)0xdeadbeef) {
+		panic("%s: deadbeef fs data pointer\n", __func__);
+	}
+
+	const struct emufs_fs *ef = fs->fs_data;
+
+	if (ef->ef_root == NULL) {
+		panic("%s: null fs root pointer\n", __func__);
+	}
+	if (ef->ef_root == (void *)0xdeadbeef) {
+		panic("%s: deadbeef fs root pointer\n", __func__);
+	}
+
+	const struct emufs_vnode *ev = ef->ef_root;
+
+	const struct vnode *v = &ev->ev_v;
+
+	if (v == NULL) {
+		panic("%s: fs root vnode is null\n", __func__);
+	}
+	if (v == (void *)0xdeadbeef) {
+		panic("%s: fs root vnode is deadbeef\n", __func__);
+	}
+	if (v->vn_ops == NULL) {
+		panic("%s: fs root vnode has null ops pointer\n", __func__);
+	}
+	if (v->vn_ops == (void *)0xdeadbeef) {
+		panic("%s: fs root vnode has deadbeef ops pointer\n", __func__);
+	}
+	if (v->vn_ops->vop_magic != VOP_MAGIC) {
+		panic("%s: fs root vnode has ops with bad magic number %lx\n", __func__, v->vn_ops->vop_magic);
+	}
+	if (v->vn_fs == (void *)0xdeadbeef) {
+		panic("%s: fs root vnode has deadbeef fs pointer\n", __func__);
+	}
+}
+
 // Return value should not be NULL
 static
 const char *
@@ -2250,17 +2365,21 @@ vnode_ops_string(const struct vnode *v)
 	{
 		return "(NULL vnode)";
 	}
-	else if (v->vn_ops == &emufs_fileops)
-	{
-		return "emufs_fileops";
-	}
-	else if (v->vn_ops == &emufs_dirops)
-	{
-		return "emufs_dirops";
-	}
 	else
 	{
-		return "(unknown vnode ops)";
+		vnode_check_EMUPRINT(v);
+		if (v->vn_ops == &emufs_fileops)
+		{
+			return "emufs_fileops";
+		}
+		else if (v->vn_ops == &emufs_dirops)
+		{
+			return "emufs_dirops";
+		}
+		else
+		{
+			return "(unknown vnode ops)";
+		}
 	}
 #else
 	(void)v;
@@ -2279,13 +2398,17 @@ fs_ops_string(const struct fs *fs)
 	{
 		return "(NULL fs)";
 	}
-	else if (fs->fs_ops == &emufs_fsops)
-	{
-		return "emufs_fsops";
-	}
 	else
 	{
-		return "(unknown fs ops)";
+		fs_check_EMUPRINT(fs);
+		if (fs->fs_ops == &emufs_fsops)
+		{
+			return "emufs_fsops";
+		}
+		else
+		{
+			return "(unknown fs ops)";
+		}
 	}
 #else
 	(void)fs;
@@ -2306,6 +2429,7 @@ fs_root_vnode_ops_string(const struct fs *fs)
 	}
 	else
 	{
+		fs_check_EMUPRINT(fs);
 		const struct emufs_fs *ef = fs->fs_data;
 		if (!ef)
 		{
